@@ -3,6 +3,7 @@ package processkit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,6 +75,27 @@ func TestReal_TimeoutCaptured(t *testing.T) {
 	}
 	if !res.TimedOut() {
 		t.Fatalf("expected a captured timeout, got %v", res.Outcome())
+	}
+}
+
+// TestReal_TimeoutCapturesPartialOutput pins the contract that a timed-out run
+// still carries the output written before the deadline killed it.
+func TestReal_TimeoutCapturesPartialOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	res, err := Command(selfExe(t)).
+		WithEnv(helperEnv("linethensleep")...).
+		WithTimeout(500 * time.Millisecond).
+		Output(context.Background())
+	if err != nil {
+		t.Fatalf("Output: %v", err)
+	}
+	if !res.TimedOut() {
+		t.Fatalf("expected timeout, got %v", res.Outcome())
+	}
+	if !strings.Contains(res.Stdout(), "before-timeout") {
+		t.Fatalf("timed-out result should carry pre-kill output, got %q", res.Stdout())
 	}
 }
 

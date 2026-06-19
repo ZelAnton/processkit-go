@@ -43,6 +43,10 @@ func TestMain(m *testing.M) {
 	case "sleep":
 		time.Sleep(10 * time.Second)
 		os.Exit(0)
+	case "linethensleep":
+		fmt.Println("before-timeout") // written before the deadline kills us
+		time.Sleep(10 * time.Second)
+		os.Exit(0)
 	case "selfsig":
 		selfSig() // Unix: SIGKILL self → Signalled outcome. Windows: os.Exit(42).
 		os.Exit(43)

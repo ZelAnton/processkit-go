@@ -21,12 +21,13 @@ type pgroupJob struct {
 
 func newJob() Job { return &pgroupJob{} }
 
-func (j *pgroupJob) Configure(cmd *exec.Cmd) {
+func (j *pgroupJob) Configure(cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	// New process group with pgid == child pid; descendants inherit it.
 	cmd.SysProcAttr.Setpgid = true
+	return nil
 }
 
 func (j *pgroupJob) Assign(cmd *exec.Cmd) error {

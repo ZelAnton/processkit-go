@@ -28,11 +28,12 @@ type winJob struct {
 
 func newJob() Job { return &winJob{handle: windows.InvalidHandle} }
 
-func (j *winJob) Configure(cmd *exec.Cmd) {
+func (j *winJob) Configure(cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+	return nil
 }
 
 func (j *winJob) Assign(cmd *exec.Cmd) error {

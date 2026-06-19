@@ -28,8 +28,12 @@ go vet ./...
 - **Formatting** is owned by `gofmt` (tabs, canonical layout); `.editorconfig`
   mirrors it. Do not reformat code you are not changing.
 - **Dependencies** are tracked in `go.mod` / `go.sum` — add them with `go get`,
-  pin versions, and commit both files. `go mod tidy` keeps them honest.
-- See [`AGENTS.md`](AGENTS.md) for the full, authoritative set of conventions.
+  pin versions, and commit both files. `go mod tidy` keeps them honest. Prefer the
+  standard library.
+- **Errors** use `errors.Is` / `errors.As` (typed sentinels + structs); a non-zero
+  exit is data (in `Result`), not an error, until a success-requiring verb asks.
+- **Comments** explain *why*, not *what*. Exported identifiers carry doc comments
+  beginning with their name; keep the public API surface minimal and intentional.
 
 ## Changelog
 

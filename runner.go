@@ -35,6 +35,11 @@ type ProcessRunner interface {
 	Output(ctx context.Context, inv Invocation) (*Result, error)
 }
 
+// waitDelay bounds cmd.Wait after the process exits or its context fires, in case
+// a descendant still holds a captured pipe open; after it the pipes are
+// force-closed so Wait can't hang on an escaped descendant.
+const waitDelay = 5 * time.Second
+
 // JobRunner is the real runner. Each command runs inside its own private,
 // kill-on-drop job (a Windows Job Object, or a POSIX process group) so the whole
 // tree — grandchildren included — dies with the run. The zero value is ready to use.
@@ -63,13 +68,19 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 	cmd := exec.CommandContext(runCtx, inv.Program, inv.Args...)
 	cmd.Dir = inv.Dir
 	cmd.Env = inv.Env
+	cmd.WaitDelay = waitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	job := sys.NewJob()
 	defer job.Close()
-	job.Configure(cmd)
+	if err := job.Configure(cmd); err != nil {
+		// TODO(cgroup): a future cgroup Configure failure (couldn't create/enable
+		// the cgroup) should surface as ErrResourceLimit, not StartError. Latent
+		// today — the Job Object and pgroup backends never fail here.
+		return nil, &StartError{Program: inv.Program, Err: err}
+	}
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {

@@ -29,8 +29,11 @@ const (
 //	j.Kill()           // reap the whole tree (grandchildren included); idempotent
 //	j.Close()          // release OS handles
 type Job interface {
-	// Configure prepares cmd for containment before it is started.
-	Configure(cmd *exec.Cmd)
+	// Configure prepares cmd for containment before it is started. It may create
+	// OS resources (e.g. a cgroup) and fail — the caller must not Start cmd if it
+	// returns an error. (The Job Object and process-group backends never fail here;
+	// a future cgroup backend can.)
+	Configure(cmd *exec.Cmd) error
 	// Assign contains the just-started child. On any failure it leaves no
 	// uncontained survivor (terminating the child if needed) and returns the error.
 	Assign(cmd *exec.Cmd) error
