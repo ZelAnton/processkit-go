@@ -4,7 +4,7 @@ Thanks for your interest in improving **processkit-go**.
 
 ## Prerequisites
 
-- Go 1.22 or later (the minimum is pinned by the `go` directive in `go.mod`).
+- Go 1.25 or later (the minimum is pinned by the `go` directive in `go.mod`).
 
 ## Build and test
 
