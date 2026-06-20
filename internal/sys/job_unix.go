@@ -86,31 +86,22 @@ func (j *pgroupJob) Resume() error  { return j.Signal(int(syscall.SIGCONT)) }
 
 // Adopt pulls an externally-started process into the group. It tries to make the
 // process its own group leader (setpgid) so its future descendants are captured
-// too; if the process has already exec'd (EACCES) or can't be moved (EPERM), it is
-// tracked individually ("solo") instead — contained (signalled/killed with the
-// group), but without descendant capture. A pid we don't own (setpgid → ESRCH) is
-// solo-tracked too if it is still alive and signallable; an already-dead pid is a
-// benign no-op.
+// too. setpgid commonly fails — EACCES once the child has exec'd, or ESRCH/EPERM
+// for a process we did not fork; whenever it fails, if the process is still alive
+// and we can signal it, it is contained individually ("solo": signalled and killed
+// with the group, but without descendant capture). An already-dead or
+// unsignallable pid is a benign no-op.
 func (j *pgroupJob) Adopt(pid int) error {
-	switch err := syscall.Setpgid(pid, pid); {
-	case err == nil:
+	if err := syscall.Setpgid(pid, pid); err == nil {
 		j.mu.Lock()
 		j.pgids = append(j.pgids, pid)
 		j.mu.Unlock()
 		return nil
-	case errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
-		j.trackSolo(pid)
-		return nil
-	case errors.Is(err, syscall.ESRCH):
-		// Not our child. If it is alive and we can signal it, contain it solo;
-		// otherwise (gone, or no permission to signal) there is nothing to do.
-		if syscall.Kill(pid, 0) == nil {
-			j.trackSolo(pid)
-		}
-		return nil
-	default:
-		return err
 	}
+	if syscall.Kill(pid, 0) == nil { // alive and signallable → contain it solo
+		j.trackSolo(pid)
+	}
+	return nil
 }
 
 func (j *pgroupJob) trackSolo(pid int) {

@@ -342,6 +342,7 @@ func TestGroup_Adopt(t *testing.T) {
 		t.Fatalf("start external: %v", err)
 	}
 	pid := ext.Process.Pid
+	time.Sleep(50 * time.Millisecond) // let the child finish exec'ing before adopting
 
 	if err := g.Adopt(ext.Process); err != nil {
 		_ = ext.Process.Kill()
