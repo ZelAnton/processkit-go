@@ -39,14 +39,25 @@ func TestGroup_Stats(t *testing.T) {
 			t.Fatalf("Start: %v", err)
 		}
 	}
-	time.Sleep(100 * time.Millisecond) // let both be running
 
-	st, err := g.Stats()
-	if err != nil {
-		t.Fatalf("Stats: %v", err)
-	}
-	if st.ActiveProcesses() < 2 {
-		t.Fatalf("ActiveProcesses = %d, want >= 2", st.ActiveProcesses())
+	// Poll rather than read once after a fixed sleep: on a loaded runner a child can
+	// take a moment to appear in the job's accounting, so a single read races (the
+	// sleepers live 10s, so once counted they stay counted).
+	var st GroupStats
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var err error
+		st, err = g.Stats()
+		if err != nil {
+			t.Fatalf("Stats: %v", err)
+		}
+		if st.ActiveProcesses() >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ActiveProcesses = %d, want >= 2 (after 3s)", st.ActiveProcesses())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	// The Job Object backend reports CPU + peak memory; the process-group backend
 	// reports the count only.
