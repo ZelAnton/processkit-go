@@ -57,6 +57,7 @@ func (p *RunningProcess) reap() {
 		p.log.exited(p.program, p.outcome, time.Since(p.startTime))
 	case err != nil:
 		p.waitErr = err
+		p.log.reapFailed(p.program, err)
 	default:
 		p.outcome = exited(0)
 		p.log.exited(p.program, p.outcome, time.Since(p.startTime))

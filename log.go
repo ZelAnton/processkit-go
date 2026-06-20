@@ -52,6 +52,16 @@ func (r runLog) exited(program string, outcome Outcome, elapsed time.Duration) {
 		slog.String("program", program), slog.String("outcome", outcome.String()), slog.Int64("elapsed_ms", ms(elapsed)))
 }
 
+// reapFailed is the terminal event for the rare case where a started process's
+// Wait fails without yielding an exit status, so it has no clean outcome — every
+// started process still emits exactly one terminal event.
+func (r runLog) reapFailed(program string, cause error) {
+	if r.l == nil {
+		return
+	}
+	r.l.Warn("process wait failed; no exit status", slog.String("program", program), errAttr(cause))
+}
+
 func (r runLog) cancelled(program string) {
 	if r.l == nil {
 		return
@@ -91,12 +101,14 @@ func (r runLog) shuttingDown(mech Mechanism, grace time.Duration) {
 		slog.String("mechanism", mech.String()), slog.Int64("grace_ms", ms(grace)))
 }
 
-func (r runLog) supervisorRestart(program string, restart int, delay time.Duration) {
+func (r runLog) supervisorRestart(program string, restart int, backoff time.Duration) {
 	if r.l == nil {
 		return
 	}
+	// backoff_ms matches the retry event's field name — both are "wait this long
+	// before re-running" (Cmd.WithRetry backoff / Supervisor.WithBackoff).
 	r.l.Debug("supervisor restarting child",
-		slog.String("program", program), slog.Int("restart", restart), slog.Int64("delay_ms", ms(delay)))
+		slog.String("program", program), slog.Int("restart", restart), slog.Int64("backoff_ms", ms(backoff)))
 }
 
 func (r runLog) pipelineStarted(program string, stages int) {
@@ -128,6 +140,6 @@ func (r runLog) supervisorStorm(program string, pause time.Duration) {
 	if r.l == nil {
 		return
 	}
-	r.l.Warn("supervisor failure storm — pausing restarts",
+	r.l.Warn("supervisor failure storm; pausing restarts",
 		slog.String("program", program), slog.Int64("pause_ms", ms(pause)))
 }

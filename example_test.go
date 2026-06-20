@@ -116,6 +116,18 @@ func ExampleCmd_WithLogger() {
 	fmt.Println(out.Stdout())
 }
 
+func ExampleNewGroup_withLogger() {
+	// On a Group the logger is a GroupOption (the package-level WithLogger), not a
+	// method — it logs each child's spawn/exit plus group teardown and shutdown.
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	group, err := processkit.NewGroup(processkit.WithLogger(logger))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close() // logs "terminating every process in the group"
+	_, _ = group.Start(context.Background(), processkit.Command("my-worker"))
+}
+
 func ExampleNewGroup_limits() {
 	ctx := context.Background()
 

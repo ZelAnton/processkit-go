@@ -336,6 +336,10 @@ mechanism, outcome, and durations — but **never the command's arguments,
 environment, working directory, or output**, which routinely carry secrets. That
 rule is structural: those values can't reach a log record.
 
+The logger flows with the value it's set on: a `Cmd.WithLogger` command logs each
+run even through `OutputAll` (set it per command — there is no batch-level logger),
+and a `Group.WithLogger` group's started processes inherit it.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
