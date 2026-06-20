@@ -17,6 +17,7 @@ type RunningProcess struct {
 	program   string
 	mechanism Mechanism
 	startTime time.Time // when the process was started, for Elapsed / Profile duration
+	log       runLog    // optional structured logging, inherited from the Group
 
 	done    chan struct{} // closed when the process has been reaped
 	outcome Outcome
@@ -53,10 +54,12 @@ func (p *RunningProcess) reap() {
 		// ProcessState. These fields are read by Wait/WaitAny/WaitAll/Members only
 		// after p.done is closed below, so the writes are safely published.
 		p.outcome = outcomeOf(p.cmd.ProcessState)
+		p.log.exited(p.program, p.outcome, time.Since(p.startTime))
 	case err != nil:
 		p.waitErr = err
 	default:
 		p.outcome = exited(0)
+		p.log.exited(p.program, p.outcome, time.Since(p.startTime))
 	}
 	if p.lines != nil {
 		close(p.lines)

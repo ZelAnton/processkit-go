@@ -3,6 +3,7 @@ package processkit
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"math/rand"
 	"time"
@@ -117,6 +118,7 @@ type Supervisor struct {
 
 	stopWhen func(*Result) bool
 	rng      func() float64 // jitter source in [0,1); nil → time-seeded default
+	log      runLog         // optional structured logging of restarts and storm pauses
 }
 
 // Supervise starts building a supervisor for cmd with sensible defaults:
@@ -216,6 +218,17 @@ func (s *Supervisor) WithFailureThreshold(threshold float64) *Supervisor {
 	return cp
 }
 
+// WithLogger configures the supervisor to emit structured [log/slog] events — each
+// restart (with its number and backoff delay) and each failure-storm pause. The
+// default is no logging; pass nil to disable. Set a logger on the supervised [Cmd]
+// (via [Cmd.WithLogger]) too if you also want per-run spawn/exit events. As always,
+// arguments and environment are never logged.
+func (s *Supervisor) WithLogger(logger *slog.Logger) *Supervisor {
+	cp := s.clone()
+	cp.log = runLog{logger}
+	return cp
+}
+
 // StopWhen sets a predicate evaluated on each completed run (clean or not), before
 // the restart policy. The first run it matches ends supervision with
 // [StoppedByPredicate]. It never sees a run that failed to start.
@@ -242,7 +255,10 @@ func (s *Supervisor) WithRunner(r ProcessRunner) *Supervisor {
 func (s *Supervisor) Run(ctx context.Context) (*SupervisionOutcome, error) {
 	runner := s.runner
 	if runner == nil {
-		runner = JobRunner{}
+		// Thread the supervised command's logger so its per-run spawn/exit events
+		// fire under supervision (the restart/storm events use the supervisor's own
+		// logger). A custom WithRunner owns its own logging.
+		runner = JobRunner{log: s.cmd.log}
 	}
 	rng := s.rng
 	if rng == nil {
@@ -292,7 +308,9 @@ func (s *Supervisor) Run(ctx context.Context) (*SupervisionOutcome, error) {
 		// Storm guard (failure path only), then per-restart backoff.
 		if crashed && s.stormPause > 0 {
 			if storm.record(time.Now(), s.failureDecay) > s.failureThreshold {
-				if !sleepCtx(ctx, applyJitter(s.stormPause, rng, s.jitter)) {
+				pause := applyJitter(s.stormPause, rng, s.jitter)
+				s.log.supervisorStorm(s.cmd.program, pause)
+				if !sleepCtx(ctx, pause) {
 					return nil, &CancelError{Program: s.cmd.program, Cause: ctx.Err()}
 				}
 				stormPauses++
@@ -300,6 +318,7 @@ func (s *Supervisor) Run(ctx context.Context) (*SupervisionOutcome, error) {
 			}
 		}
 		delay := applyJitter(backoffDelay(restarts, s.backoffBase, s.factor, s.maxBackoff), rng, s.jitter)
+		s.log.supervisorRestart(s.cmd.program, restarts+1, delay)
 		if !sleepCtx(ctx, delay) {
 			return nil, &CancelError{Program: s.cmd.program, Cause: ctx.Err()}
 		}

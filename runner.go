@@ -43,7 +43,7 @@ const waitDelay = 5 * time.Second
 // JobRunner is the real runner. Each command runs inside its own private,
 // kill-on-drop job (a Windows Job Object, or a POSIX process group) so the whole
 // tree — grandchildren included — dies with the run. The zero value is ready to use.
-type JobRunner struct{}
+type JobRunner struct{ log runLog } // log is wired by Cmd.WithLogger; zero value is silent
 
 // Output runs inv to completion inside a fresh job and captures stdout/stderr.
 //
@@ -53,7 +53,7 @@ type JobRunner struct{}
 // error ([*CancelError]); it wins over the run's own timeout and over a natural
 // exit. A process that exits exactly as its own deadline fires is reported as a
 // timeout (the ambiguity is resolved in favour of the deadline).
-func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
+func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 	parent := ctx
 	runCtx := ctx
 	if inv.Timeout > 0 {
@@ -107,18 +107,21 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
 
+	r.log.spawned(inv.Program, cmd.Process.Pid, toMechanism(job.Mechanism()))
 	waitErr := cmd.Wait()
 	duration := time.Since(start)
 	_ = job.Kill() // reap any grandchildren that outlived the direct child
 
 	// The caller's context ending the run wins over everything: no captured Result.
 	if parent.Err() != nil {
+		r.log.cancelled(inv.Program)
 		return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
 	}
 
 	var outcome Outcome
 	switch {
 	case inv.Timeout > 0 && errors.Is(runCtx.Err(), context.DeadlineExceeded):
+		r.log.timedOut(inv.Program, inv.Timeout)
 		outcome = timedOut()
 	case cmd.ProcessState != nil:
 		outcome = outcomeOf(cmd.ProcessState)
@@ -127,6 +130,7 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 	default:
 		outcome = exited(0)
 	}
+	r.log.exited(inv.Program, outcome, duration)
 
 	return &Result{
 		program:   inv.Program,

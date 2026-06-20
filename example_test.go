@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/ZelAnton/processkit-go"
@@ -99,6 +101,19 @@ func ExampleGroup_Stats() {
 	if cpu, ok := st.CPUTime(); ok { // available on Windows; count-only on POSIX groups
 		fmt.Printf("CPU: %s\n", cpu)
 	}
+}
+
+func ExampleCmd_WithLogger() {
+	// Structured slog events for the run's lifecycle (spawn, exit, timeout, …). The
+	// program name, pid, and outcome are logged; arguments and environment never are.
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	out, err := processkit.Command("git", "rev-parse", "HEAD").
+		WithLogger(logger).
+		Output(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(out.Stdout())
 }
 
 func ExampleNewGroup_limits() {

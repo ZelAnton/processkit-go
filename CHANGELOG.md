@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Observability: an optional [`log/slog`](https://pkg.go.dev/log/slog) logger via
+  `WithLogger`, off by default — on a `Cmd`, a `Pipeline`, a `Supervisor`, a
+  `CliClient`, and a `Group` (the `WithLogger` `GroupOption`). Structured events
+  cover spawn/exit, timeout/cancellation, group teardown / graceful shutdown,
+  retries, and supervisor restarts / failure-storm pauses — `Debug` for lifecycle,
+  `Warn` for anomalies. Events carry the program name, pid, mechanism, outcome, and
+  durations, but **never** the command's arguments, environment, working directory,
+  or output (the rule is structural — those values are not passed to any log call).
 - Resource limits: `NewGroup` now takes `GroupOption`s — `WithMemoryMax(bytes)`,
   `WithMaxProcesses(n)`, `WithCPUQuota(cores)` — that cap the whole tree at creation
   (the call stays backward-compatible: `NewGroup()` with no options is unchanged).

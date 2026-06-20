@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -43,7 +44,19 @@ type StartOption func(*startConfig)
 // to the OS container when the group is created; they cannot be changed afterwards.
 type GroupOption func(*groupConfig)
 
-type groupConfig struct{ limits sys.Limits }
+type groupConfig struct {
+	limits sys.Limits
+	log    runLog
+}
+
+// WithLogger configures a [Group] to emit structured [log/slog] events — child
+// spawn and exit, group teardown, graceful shutdown, and adoption. The default is
+// no logging; pass nil to disable. Events carry the program name, pid, mechanism,
+// outcome, and durations, but NEVER arguments, environment, working directory, or
+// output. (As a [GroupOption] it sits alongside [WithMemoryMax] etc.)
+func WithLogger(logger *slog.Logger) GroupOption {
+	return func(c *groupConfig) { c.log = runLog{logger} }
+}
 
 // WithMemoryMax caps the whole tree's memory at bytes (which must be > 0). Enforced
 // by a Windows Job Object; on a mechanism without a whole-tree limit primitive
@@ -79,6 +92,7 @@ type Group struct {
 	job       sys.Job
 	mechanism Mechanism
 	clk       clock
+	log       runLog
 
 	mu     sync.Mutex
 	procs  []*RunningProcess
@@ -108,7 +122,7 @@ func NewGroup(opts ...GroupOption) (*Group, error) {
 		}
 		return nil, &StartError{Program: "<group>", Err: err}
 	}
-	return &Group{job: job, mechanism: toMechanism(job.Mechanism()), clk: realClock{}}, nil
+	return &Group{job: job, mechanism: toMechanism(job.Mechanism()), clk: realClock{}, log: cfg.log}, nil
 }
 
 // validateLimits rejects nonsensical caps before touching the OS, so a typo
@@ -204,9 +218,11 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		startTime: time.Now(),
 		done:      make(chan struct{}),
 		stop:      make(chan struct{}),
+		log:       g.log,
 	}
 	g.procs = append(g.procs, p)
 	g.mu.Unlock()
+	g.log.spawned(inv.Program, ecmd.Process.Pid, g.mechanism)
 
 	// Launch the drains and reaper after registration so a concurrent Close (which
 	// has now snapshotted p) reliably reaches them via job.Kill + signalStop.
@@ -277,7 +293,11 @@ func (g *Group) Adopt(p *os.Process) error {
 	if closed {
 		return errGroupClosed
 	}
-	return mapUnsupported(g.job.Adopt(p.Pid), "adopt")
+	err := mapUnsupported(g.job.Adopt(p.Pid), "adopt")
+	if err == nil {
+		g.log.adopted(p.Pid, g.mechanism)
+	}
+	return err
 }
 
 // mapUnsupported converts the internal sys.ErrUnsupported into the public
@@ -300,6 +320,7 @@ func (g *Group) Close() error {
 	g.closed = true
 	procs := append([]*RunningProcess(nil), g.procs...)
 	g.mu.Unlock()
+	g.log.terminating(g.mechanism)
 
 	killErr := g.job.Kill()
 	closeErr := g.job.Close()
@@ -324,6 +345,7 @@ func (g *Group) Shutdown(ctx context.Context, opts ...ShutdownOption) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	g.log.shuttingDown(g.mechanism, cfg.grace)
 	if err := g.job.Signal(SignalTerm.number()); err != nil {
 		// Unsupported (Windows) or a delivery failure — fall back to a hard kill.
 		return g.Close()

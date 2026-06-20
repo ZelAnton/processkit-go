@@ -3,6 +3,7 @@ package processkit
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -26,6 +27,7 @@ type Cmd struct {
 	timeout time.Duration
 	runner  ProcessRunner
 	retry   *retryPolicy // nil unless WithRetry was set
+	log     runLog       // optional *slog.Logger; zero value is a no-op
 
 	// uncheckedInPipe exempts this command from a Pipeline's pipefail attribution.
 	// Deliberately NOT carried in invocation(), so it is inert outside a Pipeline
@@ -117,6 +119,19 @@ func (c *Cmd) WithRunner(r ProcessRunner) *Cmd {
 	return cp
 }
 
+// WithLogger returns a copy of the command that emits structured [log/slog] events
+// over its lifetime — spawn, exit, timeout, cancellation, and retries. The default
+// is no logging; pass nil to disable. The events carry the program name, pid,
+// mechanism, outcome, and durations, but NEVER the command's arguments,
+// environment, working directory, or output — those routinely carry secrets.
+// Lifecycle events come from the built-in [JobRunner]; with a custom [WithRunner]
+// only the retry events are emitted (the runner logs its own runs).
+func (c *Cmd) WithLogger(logger *slog.Logger) *Cmd {
+	cp := c.clone()
+	cp.log = runLog{logger}
+	return cp
+}
+
 // WithUncheckedInPipe returns a copy of the command exempt from a [Pipeline]'s
 // pipefail attribution: as a pipeline stage, its failure never blames the chain —
 // a non-zero exit always, and for a non-final stage a signal (including the
@@ -165,7 +180,7 @@ func (c *Cmd) invocation() Invocation {
 func (c *Cmd) run(ctx context.Context) (*Result, error) {
 	r := c.runner
 	if r == nil {
-		r = JobRunner{}
+		r = JobRunner{log: c.log} // the built-in runner logs spawn/exit/timeout/cancel
 	}
 	return r.Output(ctx, c.invocation())
 }
@@ -248,6 +263,7 @@ func retryRun[T any](ctx context.Context, c *Cmd, extract func(*Result) (T, erro
 		if policy == nil || tries >= maxAttempts || policy.retryIf == nil || !policy.retryIf(err) {
 			return zero, err // no policy, budget spent, missing/false classifier
 		}
+		c.log.retrying(c.program, tries+1, maxAttempts, policy.backoff, err)
 		if !sleepCtx(ctx, policy.backoff) {
 			return zero, &CancelError{Program: c.program, Cause: ctx.Err()}
 		}

@@ -87,6 +87,15 @@
 // The [Cmd] verbs and [Supervisor] run through it; [Group.Start] and [Pipe] always
 // run real processes (their containment is the point), so they can't be faked this way.
 //
+// For observability, attach an optional [log/slog] logger with WithLogger — on a
+// [Cmd], a [Pipeline], a [Supervisor], a [CliClient], or a [Group] (the [WithLogger]
+// option). It is off by default. Events cover spawn and exit, timeout and
+// cancellation, group teardown and graceful shutdown, retries, supervisor restarts
+// and failure-storm pauses — at Debug for ordinary lifecycle and Warn for anomalies.
+// They carry the program name, pid, mechanism, outcome, and durations, but NEVER
+// the command's arguments, environment, working directory, or output, which
+// routinely carry secrets.
+//
 // To build a reusable typed wrapper around one CLI tool (git, gh, …), use a
 // [CliClient]: it injects the program, defaults, and runner once, so the wrapper is
 // just argument-building and output-parsing — and is mockable by construction. The

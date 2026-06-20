@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,6 +31,7 @@ type Pipeline struct {
 	stages  []*Cmd
 	timeout time.Duration
 	stdin   io.Reader
+	log     runLog
 }
 
 // Pipe builds a pipeline from two or more stages, wiring each stage's stdout to
@@ -68,6 +70,16 @@ func (p *Pipeline) WithTimeout(d time.Duration) *Pipeline {
 func (p *Pipeline) WithStdin(r io.Reader) *Pipeline {
 	cp := p.clone()
 	cp.stdin = r
+	return cp
+}
+
+// WithLogger returns a copy of the pipeline that emits structured [log/slog]
+// events when the chain starts and finishes (the finish event carries the
+// attributed outcome and elapsed time). The default is no logging; pass nil to
+// disable. As always, the stages' arguments and environment are never logged.
+func (p *Pipeline) WithLogger(logger *slog.Logger) *Pipeline {
+	cp := p.clone()
+	cp.log = runLog{logger}
 	return cp
 }
 
@@ -190,6 +202,7 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 		}
 		ecmds[i] = ecmd
 	}
+	p.log.pipelineStarted(p.name(), n)
 
 	// Close the parent's copies of the inter-stage pipe ends so that, when a stage
 	// exits, the next stage sees EOF on its stdin (the children hold their own dups).
@@ -220,6 +233,7 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 	// and the joined chain name as the program. A timeout is never a success anyway
 	// (timedOut has no Code), so the empty ok-codes change nothing.
 	if p.timeout > 0 && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		p.log.pipelineFinished(p.name(), timedOut(), duration)
 		return &Result{
 			program:   p.name(),
 			outcome:   timedOut(),
@@ -248,7 +262,9 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 			unchecked: stage.uncheckedInPipe,
 		}
 	}
-	return pipefail(stages, lastStdout.Bytes(), toMechanism(job.Mechanism()), duration), nil
+	res := pipefail(stages, lastStdout.Bytes(), toMechanism(job.Mechanism()), duration)
+	p.log.pipelineFinished(res.program, res.outcome, duration)
+	return res, nil
 }
 
 // Run requires the chain to succeed and returns the last stage's stdout as text

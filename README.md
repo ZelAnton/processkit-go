@@ -315,6 +315,27 @@ git := &Git{client: processkit.NewClient("git").WithRunner(scripted)}
 them (`rec.OnlyCall().Args`). Writing your own runner? Build its results with
 `processkit.NewResult`.
 
+### Observability
+
+Attach a [`log/slog`](https://pkg.go.dev/log/slog) logger with `WithLogger` — on a
+`Cmd`, a `Pipeline`, a `Supervisor`, a `CliClient`, or a `Group` (the `WithLogger`
+option). It is off by default.
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+out, _ := processkit.Command("ffmpeg", "-i", "in.mov", "out.mp4").
+    WithLogger(logger).Output(ctx)
+// {"level":"DEBUG","msg":"child spawned","program":"ffmpeg","pid":4242,"mechanism":"JobObject"}
+// {"level":"DEBUG","msg":"process exited","program":"ffmpeg","outcome":"exited(0)","elapsed_ms":1830}
+```
+
+Events cover spawn/exit, timeout and cancellation, group teardown and graceful
+shutdown, retries, and supervisor restarts / failure-storm pauses — at `Debug` for
+ordinary lifecycle and `Warn` for anomalies. They carry the program name, pid,
+mechanism, outcome, and durations — but **never the command's arguments,
+environment, working directory, or output**, which routinely carry secrets. That
+rule is structural: those values can't reach a log record.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

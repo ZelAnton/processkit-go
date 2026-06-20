@@ -2,6 +2,7 @@ package processkit
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
 
@@ -65,6 +66,13 @@ func (c *CliClient) WithDir(dir string) *CliClient {
 // listed exit codes as success in addition to 0.
 func (c *CliClient) WithOkCodes(codes ...int) *CliClient {
 	return &CliClient{base: c.base.WithOkCodes(codes...)}
+}
+
+// WithLogger returns a copy of the client whose commands emit structured
+// [log/slog] lifecycle events (see [Cmd.WithLogger]). The default is no logging;
+// pass nil to disable. Arguments and environment are never logged.
+func (c *CliClient) WithLogger(logger *slog.Logger) *CliClient {
+	return &CliClient{base: c.base.WithLogger(logger)}
 }
 
 // Command builds a command for a subcommand: the client's program and defaults
