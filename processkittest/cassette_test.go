@@ -344,6 +344,19 @@ func TestCassette_DrivesRetry(t *testing.T) {
 	}
 }
 
+// A command with stdin can't be keyed (the result depends on un-recorded input), so
+// recording or replaying one is rejected loudly rather than served a wrong answer.
+func TestCassette_RejectsStdin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cas.json")
+	rec := Record(path, &seqInner{results: []*processkit.Result{result(processkit.Exited(0), "ok", "")}})
+	_, err := processkit.Command("tool").
+		WithStdin(strings.NewReader("input")).
+		WithRunner(rec).Output(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "stdin") {
+		t.Fatalf("a stdin command should be rejected by the cassette; err = %v", err)
+	}
+}
+
 func TestCassette_MissingFileIsNotExist(t *testing.T) {
 	_, err := Replay(filepath.Join(t.TempDir(), "nope.json"))
 	if !os.IsNotExist(err) {

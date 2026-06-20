@@ -191,6 +191,13 @@ func Replay(path string) (*RecordReplayRunner, error) {
 
 // Output implements [processkit.ProcessRunner].
 func (r *RecordReplayRunner) Output(ctx context.Context, inv processkit.Invocation) (*processkit.Result, error) {
+	if inv.Stdin != nil {
+		// A run's result can depend on its stdin, but the cassette keys only on
+		// program + args + dir (an io.Reader can't be hashed without consuming it),
+		// so a stdin command would record/replay an answer that isn't reproducible.
+		// Fail loud rather than serve a silently-wrong result.
+		return nil, fmt.Errorf("processkittest: a cassette cannot record or replay %q with stdin (its result is not keyed by the input)", inv.Program)
+	}
 	if r.mode == modeReplay {
 		return r.replay(inv)
 	}

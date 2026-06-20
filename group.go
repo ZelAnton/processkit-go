@@ -101,10 +101,11 @@ type Group struct {
 
 // NewGroup creates an empty process group. Pass [WithMemoryMax],
 // [WithMaxProcesses], or [WithCPUQuota] to cap the whole tree's resources; those
-// caps are applied to the OS container now. If a cap is invalid, or the active
-// mechanism can't enforce it (no whole-tree limit primitive — every Unix backend
-// today), NewGroup returns a [*ResourceLimitError] (matching [ErrResourceLimit])
-// rather than handing back a silently-unbounded group.
+// caps are applied to the OS container now (a Windows Job Object, or a Linux cgroup
+// v2 subtree at the real cgroup-v2 root). If a cap is invalid, or the active
+// mechanism can't enforce it (macOS/BSD, the Linux process-group fallback, or a
+// Linux cgroup that isn't the real root), NewGroup returns a [*ResourceLimitError]
+// (matching [ErrResourceLimit]) rather than handing back a silently-unbounded group.
 func NewGroup(opts ...GroupOption) (*Group, error) {
 	var cfg groupConfig
 	for _, o := range opts {
@@ -147,8 +148,9 @@ func (g *Group) Mechanism() Mechanism { return g.mechanism }
 // keeps running until it exits, is killed, or the group is closed.
 //
 // Start uses cmd's program, arguments, working directory, and environment, but
-// NOT its WithTimeout / WithOkCodes / WithRunner — those configure the capture
-// verbs ([Cmd.Output] etc.), not a live start. Bound a started process with the
+// NOT its WithTimeout / WithOkCodes / WithRunner / WithStdin — those configure the
+// capture verbs ([Cmd.Output] etc.), not a live start. Feed a started process's
+// stdin with the [WithStdin] start option instead. Bound a started process with the
 // ctx you pass and tear it down with [RunningProcess.Kill] or [Group.Close].
 //
 // By default a group-started process discards its stdout/stderr. Pass stream

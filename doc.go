@@ -30,10 +30,10 @@
 // closes at EOF. Per-line callbacks ([OnStdoutLine] / [OnStderrLine]), raw tees
 // ([WithStdout] / [WithStderr]), interactive [WithStdin], a bounded-buffer policy
 // ([BufferLines] / [OnOverflow]), and an encoding [WithDecoder] all compose as
-// [StartOption]s on [Group.Start]. Feeding standard input is a [Group.Start]
-// ([WithStdin]) or [Pipeline.WithStdin] facility — the batch capture verbs
-// ([Cmd.Output] etc.) take no stdin; to pipe a buffer into one command, make it the
-// head of a [Pipe] (or start it in a group).
+// [StartOption]s on [Group.Start]. To feed a *captured* run its standard input, use
+// [Cmd.WithStdin] (e.g. piping a buffer into `jq`); a live [Group.Start] uses the
+// [WithStdin] start option, and a [Pipe] wires each stage's stdin from the previous
+// (its head from [Pipeline.WithStdin]).
 //
 // To chain commands shell-free — a | b | c — use [Pipe]: each stage's stdout
 // feeds the next stage's stdin over a real OS pipe, and the whole chain runs in

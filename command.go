@@ -3,6 +3,7 @@ package processkit
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -29,6 +30,7 @@ type Cmd struct {
 	runner  ProcessRunner
 	retry   *retryPolicy // nil unless WithRetry was set
 	log     runLog       // optional *slog.Logger; zero value is a no-op
+	stdin   io.Reader    // optional standard input for the capture verbs
 
 	// uncheckedInPipe exempts this command from a Pipeline's pipefail attribution.
 	// Deliberately NOT carried in invocation(), so it is inert outside a Pipeline
@@ -136,6 +138,20 @@ func (c *Cmd) WithRunner(r ProcessRunner) *Cmd {
 	return cp
 }
 
+// WithStdin returns a copy of the command that feeds r as the process's standard
+// input for the capture verbs ([Cmd.Output], [Cmd.Run], [Cmd.ExitCode], [Cmd.Probe])
+// — e.g. piping a buffer into a tool: Command("jq", ".x").WithStdin(strings.NewReader(doc)).
+// r is read once as the run proceeds: combine it with [Cmd.WithRetry] only via a
+// re-readable source, since a retry can't rewind a consumed reader. It does NOT
+// apply to a command used as a [Pipe] stage (the chain wires stdin) or started in a
+// [Group] (use the [WithStdin] start option there); record/replay cassettes reject a
+// command with stdin, whose result isn't reproducible from the recorded key.
+func (c *Cmd) WithStdin(r io.Reader) *Cmd {
+	cp := c.clone()
+	cp.stdin = r
+	return cp
+}
+
 // WithLogger returns a copy of the command that emits structured [log/slog] events
 // over its lifetime — spawn, exit, timeout, cancellation, and retries. The default
 // is no logging; pass nil to disable. The events carry the program name, pid,
@@ -191,6 +207,7 @@ func (c *Cmd) invocation() Invocation {
 		Env:     cloneEnv(c.env),
 		OkCodes: append([]int(nil), c.okCodes...),
 		Timeout: c.timeout,
+		Stdin:   c.stdin,
 	}
 }
 

@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but `program` / `args` / `cwd` / `stdout` / `stderr` are stored verbatim — the
   file is written `0600` on Unix (refusing to follow a symlink), inherits the
   directory ACL on Windows, and a "review before committing" note is documented.
+- `Cmd.WithStdin(io.Reader)` feeds standard input to the capture verbs
+  (`Output` / `Run` / `ExitCode` / `Probe`) — e.g. piping a buffer into a tool. The
+  `ProcessRunner` seam grew an `Invocation.Stdin` field for it. Live `Group.Start`
+  keeps its own `WithStdin` start option and `Pipe` wires stdin along the chain;
+  record/replay cassettes reject a command with stdin (its result isn't reproducible
+  from the recorded program+args+dir key).
 - Linux **cgroup v2** containment + limits backend. On Linux, processkit now prefers
   a cgroup v2 subtree over a process group: children are placed atomically at clone
   (`clone3` `CLONE_INTO_CGROUP`, kernel ≥ 5.7), teardown is the race-free

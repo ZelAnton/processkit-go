@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,7 @@ type Invocation struct {
 	Env     []string // full environment as "KEY=VALUE"; nil inherits the parent's
 	OkCodes []int    // exit codes treated as success in addition to 0
 	Timeout time.Duration
+	Stdin   io.Reader // standard input for the run, or nil for none (capture verbs only)
 }
 
 // ProcessRunner runs a command to completion and returns the captured [Result].
@@ -68,6 +70,7 @@ func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) 
 	cmd := exec.CommandContext(runCtx, inv.Program, inv.Args...)
 	cmd.Dir = inv.Dir
 	cmd.Env = inv.Env
+	cmd.Stdin = inv.Stdin // nil → no stdin, as before
 	cmd.WaitDelay = waitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

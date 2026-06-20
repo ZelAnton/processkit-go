@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ZelAnton/processkit-go"
@@ -101,6 +102,17 @@ func ExampleGroup_Stats() {
 	if cpu, ok := st.CPUTime(); ok { // available on Windows; count-only on POSIX groups
 		fmt.Printf("CPU: %s\n", cpu)
 	}
+}
+
+func ExampleCmd_WithStdin() {
+	// Pipe a buffer into a tool and capture its output (no shell).
+	out, err := processkit.Command("tr", "a-z", "A-Z").
+		WithStdin(strings.NewReader("hello")).
+		Run(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(out)
 }
 
 func ExampleCmd_WithLogger() {
