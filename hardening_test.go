@@ -51,6 +51,21 @@ func TestCmd_AppendEnv_DoesNotMutateReceiver(t *testing.T) {
 	}
 }
 
+// The zero-value Signal must be rejected, not silently delivered as SIGTERM.
+func TestGroup_SignalZeroValueRejected(t *testing.T) {
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+	defer g.Close()
+	if err := g.Signal(Signal{}); err == nil {
+		t.Error("Group.Signal(Signal{}) should reject the unspecified zero Signal")
+	}
+	if err := g.Signal(SignalKill); err != nil { // a curated signal still works
+		t.Errorf("SignalKill should work: %v", err)
+	}
+}
+
 func TestGroup_Processes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-subprocess test")

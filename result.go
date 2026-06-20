@@ -12,7 +12,8 @@ import (
 //
 // Outcomes are normally produced by running a command; for a fake [ProcessRunner]
 // or a custom runner, build one with [Exited], [Signalled], or [TimedOut] (and a
-// whole [Result] with [NewResult]).
+// whole [Result] with [NewResult]). The zero value is exited(0) — build outcomes
+// with the constructors rather than relying on a bare Outcome{}.
 type Outcome struct {
 	kind      outcomeKind
 	code      int  // valid when kind == outcomeExited

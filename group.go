@@ -273,6 +273,9 @@ func (g *Group) Processes() []*RunningProcess {
 // [ErrUnsupported] on Windows, whose Job Object has no signal tier. Signalling a
 // group whose members have already exited is a no-op success.
 func (g *Group) Signal(sig Signal) error {
+	if sig.isUnset() {
+		return errors.New("processkit: Group.Signal called with the zero Signal; use SignalTerm, SignalKill, …, or RawSignal")
+	}
 	if sig.isKill() {
 		return g.job.Kill()
 	}

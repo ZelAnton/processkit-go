@@ -5,7 +5,8 @@ import "fmt"
 // Signal is a portable signal to deliver to a [Group] with [Group.Signal]. Use a
 // curated value ([SignalTerm], [SignalKill], …) for portability, or [RawSignal] to
 // pass a raw Unix signal number. Only [SignalKill] is honoured on every platform;
-// the rest are Unix-only (Windows returns [ErrUnsupported]).
+// the rest are Unix-only (Windows returns [ErrUnsupported]). The zero value is an
+// unspecified Signal — [Group.Signal] rejects it rather than guessing.
 type Signal struct {
 	name string
 	kind sigKind
@@ -15,7 +16,8 @@ type Signal struct {
 type sigKind uint8
 
 const (
-	sigTerm sigKind = iota
+	sigUnset sigKind = iota // the zero value: an unspecified Signal (never delivers)
+	sigTerm
 	sigKill
 	sigInt
 	sigHup
@@ -51,3 +53,6 @@ func (s Signal) String() string {
 
 // isKill reports whether this is the universally-deliverable kill signal.
 func (s Signal) isKill() bool { return s.kind == sigKill }
+
+// isUnset reports whether this is the zero-value Signal (no signal specified).
+func (s Signal) isUnset() bool { return s.kind == sigUnset }
