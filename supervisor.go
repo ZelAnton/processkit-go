@@ -378,19 +378,3 @@ func (st *stormState) reset() {
 	st.score = 0
 	st.hasLast = false
 }
-
-// sleepCtx sleeps for d, returning true if it elapsed or false if ctx ended first.
-// A non-positive d does not sleep; it just reports whether ctx is still live.
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	if d <= 0 {
-		return ctx.Err() == nil
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}

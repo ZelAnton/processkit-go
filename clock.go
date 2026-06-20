@@ -1,6 +1,26 @@
 package processkit
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// sleepCtx sleeps for d, returning true if it elapsed or false if ctx ended first.
+// A non-positive d does not sleep; it just reports whether ctx is still live. It is
+// the ctx-aware backoff used by the supervisor and by [Cmd.WithRetry].
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
 
 // clock is the internal time seam, so deadline / grace / backoff logic is
 // testable without real sleeps. The package uses realClock; tests inject a fake.
