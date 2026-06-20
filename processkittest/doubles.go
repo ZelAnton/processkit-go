@@ -250,7 +250,9 @@ func (r *RecordingRunner) OnlyCall() processkit.Invocation {
 }
 
 // cloneInvocation deep-copies the borrowed invocation slices so a recorded call
-// can't be mutated by a later run.
+// can't be mutated by a later run. The Stdin reader (if any) is carried by
+// reference, not snapshotted — an io.Reader can't be cloned, and a recorded Calls()
+// entry is for asserting on program/args/dir/env, not for re-reading stdin.
 func cloneInvocation(inv processkit.Invocation) processkit.Invocation {
 	inv.Args = append([]string(nil), inv.Args...)
 	if inv.Env != nil {

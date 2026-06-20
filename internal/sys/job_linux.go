@@ -162,7 +162,9 @@ func (j *cgroupJob) Close() error {
 func (j *cgroupJob) Mechanism() Mechanism { return CgroupV2 }
 
 // Stats reports the live member count and sums each member's /proc CPU and peak
-// memory (the cgroup has no controllers enabled, so cpu/memory aren't read from it).
+// memory. (A no-limit group enables no controllers; even a limited one is read
+// per-process from /proc here rather than from the controller files, for a uniform
+// shape with the process-group backend.)
 func (j *cgroupJob) Stats() (Stats, error) {
 	pids := j.members()
 	s := Stats{ActiveProcesses: len(pids)}

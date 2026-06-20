@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -203,6 +204,52 @@ func TestGroup_StartRacingClose(t *testing.T) {
 				t.Fatalf("grandchild %d (from %s) still alive — orphan after Start-racing-Close", pid, e.Name())
 			}
 			time.Sleep(20 * time.Millisecond)
+		}
+	}
+}
+
+// Adopt racing Close on one group must not leave the adopted process running: if
+// Adopt won (no error), it joined the container before Close snapshotted, so Close
+// killed it; if it lost (errGroupClosed), it was never pulled in. Exercises the
+// Adopt-under-g.mu fix under -race (privileged: the cgroup fd/dir race window).
+func TestGroup_AdoptRacingClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	for iter := 0; iter < 15; iter++ {
+		ext := exec.Command(selfExe(t))
+		ext.Env = helperEnv("sleep")
+		if err := ext.Start(); err != nil {
+			t.Fatalf("start external process: %v", err)
+		}
+		reaped := make(chan struct{})
+		go func() { _ = ext.Wait(); close(reaped) }() // reap so the dead process isn't a zombie
+
+		g, err := NewGroup()
+		if err != nil {
+			t.Fatalf("NewGroup: %v", err)
+		}
+		var adoptErr error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() { defer wg.Done(); adoptErr = g.Adopt(ext.Process) }()
+		time.Sleep(time.Duration(iter%2) * time.Millisecond) // vary the race window
+		_ = g.Close()
+		wg.Wait()
+
+		if adoptErr == nil {
+			// Adopt joined it to the group, so Close must have killed it.
+			select {
+			case <-reaped:
+			case <-time.After(3 * time.Second):
+				_ = ext.Process.Kill()
+				<-reaped
+				t.Fatalf("iter %d: adopted process survived Close — orphan", iter)
+			}
+		} else {
+			// Adopt lost the race (errGroupClosed): the process is ours to kill.
+			_ = ext.Process.Kill()
+			<-reaped
 		}
 	}
 }

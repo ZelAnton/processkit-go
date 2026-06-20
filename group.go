@@ -311,13 +311,16 @@ func (g *Group) Adopt(p *os.Process) error {
 	if p == nil {
 		return errors.New("processkit: Adopt(nil)")
 	}
+	// Contain under g.mu, serialized against Close (like Start): either the process
+	// joins the container before a concurrent Close tears it down, or we observe
+	// g.closed first — never a containment that races the cgroup fd / dir removal.
 	g.mu.Lock()
-	closed := g.closed
-	g.mu.Unlock()
-	if closed {
+	if g.closed {
+		g.mu.Unlock()
 		return errGroupClosed
 	}
 	err := mapUnsupported(g.job.Adopt(p.Pid), "adopt")
+	g.mu.Unlock()
 	if err == nil {
 		g.log.adopted(p.Pid, g.mechanism)
 	}
