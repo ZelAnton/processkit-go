@@ -123,7 +123,8 @@ type Supervisor struct {
 // RestartOnCrash, unlimited restarts, 200ms base backoff doubling to a 30s cap,
 // jitter on, and the failure-storm guard off. The command runs once per
 // incarnation; its WithTimeout / WithOkCodes / WithEnv etc. apply each run, but
-// its WithRunner does not — set the supervisor's runner with [Supervisor.WithRunner].
+// its WithRunner and WithRetry do not — set the supervisor's runner with
+// [Supervisor.WithRunner], and let the restart policy drive retries.
 func Supervise(cmd *Cmd) *Supervisor {
 	return &Supervisor{
 		cmd:              cmd,

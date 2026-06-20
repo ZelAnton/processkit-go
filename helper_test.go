@@ -153,6 +153,22 @@ func TestMain(m *testing.M) {
 		}()
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
+	case "flakyfile":
+		// Increment a counter in the PK_COUNTER file; exit 1 until the count reaches
+		// PK_SUCCEED_AT, then print "ok" and exit 0. Drives a real retry-to-success
+		// test (persistent state across re-execs via the file).
+		path := os.Getenv("PK_COUNTER")
+		n := 0
+		if b, err := os.ReadFile(path); err == nil {
+			n, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		}
+		n++
+		_ = os.WriteFile(path, []byte(strconv.Itoa(n)), 0o600)
+		if n < envInt("PK_SUCCEED_AT", 3) {
+			os.Exit(1)
+		}
+		fmt.Println("ok")
+		os.Exit(0)
 	case "termexit":
 		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.
 		os.Exit(44)

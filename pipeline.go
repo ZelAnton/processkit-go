@@ -36,8 +36,10 @@ type Pipeline struct {
 // the next stage's stdin. A pipeline needs at least two stages; the verbs return
 // [ErrTooFewStages] for fewer. Each stage's program, arguments, [Cmd.WithDir],
 // [Cmd.WithEnv], [Cmd.WithTimeout] (per-stage deadline), [Cmd.WithOkCodes], and
-// [Cmd.WithUncheckedInPipe] are honoured; its [Cmd.WithRunner] is not (a pipeline
-// always runs real processes, so a stage carrying a fake runner is ignored).
+// [Cmd.WithUncheckedInPipe] are honoured; its [Cmd.WithRunner] and [Cmd.WithRetry]
+// are not (a pipeline always runs real processes and has its own control flow, so
+// a stage's fake runner or retry policy is ignored — retry the whole chain
+// instead).
 func Pipe(stages ...*Cmd) *Pipeline {
 	return &Pipeline{stages: append([]*Cmd(nil), stages...)}
 }

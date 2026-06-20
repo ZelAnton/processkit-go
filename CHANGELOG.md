@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Retry — `Cmd.WithRetry(maxAttempts, backoff, retryIf)` replays a failed run to
+  success: it runs at most `maxAttempts` times total, sleeps a constant `backoff`
+  between tries, and retries only while `retryIf func(error) bool` classifies the
+  failure as retryable (no default classifier). Stops on the first success,
+  non-retryable failure, or budget, returning the last error; a cancelled context
+  is terminal and aborts the backoff. Applies to `Run` / `ExitCode` / `Probe` (not
+  `Output`, nor a stage in a pipeline / under a supervisor). `IsTransient(err)` is
+  a ready-made classifier for transient low-level spawn failures.
 - Readiness probes on `RunningProcess` — `WaitForLine` (a matching output line,
   returned), `WaitForPort` (a TCP address accepts), and `WaitFor` (a custom
   predicate). Each takes a `context.Context` and a `within` deadline. A probe

@@ -2,6 +2,7 @@ package processkit
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -24,11 +25,20 @@ type Cmd struct {
 	okCodes []int
 	timeout time.Duration
 	runner  ProcessRunner
+	retry   *retryPolicy // nil unless WithRetry was set
 
 	// uncheckedInPipe exempts this command from a Pipeline's pipefail attribution.
 	// Deliberately NOT carried in invocation(), so it is inert outside a Pipeline
 	// (Cmd.Output and Group.Start never see it).
 	uncheckedInPipe bool
+}
+
+// retryPolicy is the immutable configuration set by [Cmd.WithRetry]. It is shared
+// by clones (copy-on-write never mutates it).
+type retryPolicy struct {
+	maxAttempts int
+	backoff     time.Duration
+	retryIf     func(error) bool
 }
 
 // Command starts building a command that runs program with args. Finish with a
@@ -120,6 +130,27 @@ func (c *Cmd) WithUncheckedInPipe() *Cmd {
 	return cp
 }
 
+// WithRetry returns a copy of the command that replays a failed run up to
+// maxAttempts times total (so maxAttempts <= 1 runs exactly once), sleeping
+// backoff between tries, but only while retryIf classifies the failure as
+// retryable. It stops on the first success, the first non-retryable failure, or
+// the attempt budget — returning the last error unchanged (there is no
+// retries-exhausted error). A cancelled context is terminal: it is never retried,
+// whatever retryIf says, and it aborts a backoff sleep promptly.
+//
+// Retry applies to the success-requiring verbs ([Cmd.Run], [Cmd.ExitCode],
+// [Cmd.Probe]) — the ones that turn a bad run into an error for retryIf to judge.
+// It does NOT apply to [Cmd.Output] (a non-zero exit there is data, not an error),
+// nor to a command used as a [Pipe] stage or under a [Supervisor] (those have
+// their own control flow). There is no default classifier; pass one — for example
+// errors.Is(err, [ErrTimeout]) to retry timeouts, or [IsTransient] for transient
+// low-level spawn failures. A nil retryIf retries nothing (the command runs once).
+func (c *Cmd) WithRetry(maxAttempts int, backoff time.Duration, retryIf func(error) bool) *Cmd {
+	cp := c.clone()
+	cp.retry = &retryPolicy{maxAttempts: maxAttempts, backoff: backoff, retryIf: retryIf}
+	return cp
+}
+
 func (c *Cmd) invocation() Invocation {
 	return Invocation{
 		Program: c.program,
@@ -148,50 +179,77 @@ func (c *Cmd) Output(ctx context.Context) (*Result, error) {
 
 // Run requires a successful exit and returns stdout as text with trailing
 // whitespace trimmed. A non-zero exit, timeout, signal kill, or cancellation is
-// an error.
+// an error. Honours [Cmd.WithRetry].
 func (c *Cmd) Run(ctx context.Context) (string, error) {
-	res, err := c.run(ctx)
-	if err != nil {
-		return "", err
-	}
-	if err := res.Err(); err != nil {
-		return "", err
-	}
-	return strings.TrimRight(res.Stdout(), " \t\r\n"), nil
+	return retryRun(ctx, c, func(res *Result) (string, error) {
+		if err := res.Err(); err != nil {
+			return "", err
+		}
+		return strings.TrimRight(res.Stdout(), " \t\r\n"), nil
+	})
 }
 
 // ExitCode runs the command and returns its exit code. A run with no exit code
-// (a timeout or signal kill) is an error rather than a fabricated -1.
+// (a timeout or signal kill) is an error rather than a fabricated -1. Honours
+// [Cmd.WithRetry].
 func (c *Cmd) ExitCode(ctx context.Context) (int, error) {
-	res, err := c.run(ctx)
-	if err != nil {
-		return 0, err
-	}
-	code, ok := res.Code()
-	if !ok {
-		return 0, res.toExitError()
-	}
-	return code, nil
+	return retryRun(ctx, c, func(res *Result) (int, error) {
+		code, ok := res.Code()
+		if !ok {
+			return 0, res.toExitError()
+		}
+		return code, nil
+	})
 }
 
 // Probe runs the command as a yes/no predicate: exit 0 → true, exit 1 → false,
 // anything else (another code, a timeout, a signal kill) → error. OkCodes does
-// not apply to a probe.
+// not apply to a probe. Honours [Cmd.WithRetry].
 func (c *Cmd) Probe(ctx context.Context) (bool, error) {
-	res, err := c.run(ctx)
-	if err != nil {
-		return false, err
+	return retryRun(ctx, c, func(res *Result) (bool, error) {
+		code, ok := res.Code()
+		if !ok {
+			return false, res.toExitError()
+		}
+		switch code {
+		case 0:
+			return true, nil
+		case 1:
+			return false, nil
+		default:
+			return false, res.toExitError()
+		}
+	})
+}
+
+// retryRun runs c and applies extract (a verb's success check) to each attempt,
+// retrying per [Cmd.WithRetry] while the failure is classified retryable. On
+// success it returns extract's value; otherwise it returns the last error.
+func retryRun[T any](ctx context.Context, c *Cmd, extract func(*Result) (T, error)) (T, error) {
+	var zero T
+	policy := c.retry
+	maxAttempts := 1
+	if policy != nil && policy.maxAttempts > 1 {
+		maxAttempts = policy.maxAttempts
 	}
-	code, ok := res.Code()
-	if !ok {
-		return false, res.toExitError()
-	}
-	switch code {
-	case 0:
-		return true, nil
-	case 1:
-		return false, nil
-	default:
-		return false, res.toExitError()
+	for tries := 1; ; tries++ {
+		res, err := c.run(ctx)
+		var val T
+		if err == nil {
+			val, err = extract(res)
+		}
+		if err == nil {
+			return val, nil // success
+		}
+		// A cancelled context is terminal — never retried, whatever retryIf says.
+		if errors.Is(err, ErrCancelled) {
+			return zero, err
+		}
+		if policy == nil || tries >= maxAttempts || policy.retryIf == nil || !policy.retryIf(err) {
+			return zero, err // no policy, budget spent, missing/false classifier
+		}
+		if !sleepCtx(ctx, policy.backoff) {
+			return zero, &CancelError{Program: c.program, Cause: ctx.Err()}
+		}
 	}
 }

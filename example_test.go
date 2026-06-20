@@ -2,6 +2,7 @@ package processkit_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -50,6 +51,21 @@ func ExampleGroup() {
 	// ... use the server, then end it gracefully (SIGTERM → grace → SIGKILL on
 	// Unix; an atomic kill on Windows):
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
+}
+
+func ExampleCmd_WithRetry() {
+	ctx := context.Background()
+	// Retry a flaky fetch up to 5 times, 1s apart, but only when it times out.
+	out, err := processkit.Command("curl", "-sf", "https://example.com").
+		WithTimeout(10*time.Second).
+		WithRetry(5, time.Second, func(err error) bool {
+			return errors.Is(err, processkit.ErrTimeout)
+		}).
+		Run(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(out)
 }
 
 func ExampleRunningProcess_WaitForPort() {

@@ -56,7 +56,9 @@
 // [Supervisor.StopWhen] predicate, or an exhausted restart budget. Supervision is
 // sequential and single-flight, so a command's whole tree is always reaped before
 // a restart. [Supervisor.Run] returns a [SupervisionOutcome] describing why it
-// stopped and how many restarts it took.
+// stopped and how many restarts it took. To replay one run to *success* — rather
+// than keep a process alive — attach [Cmd.WithRetry] to a verb instead: it retries
+// a failed run, with a classifier deciding which failures are worth another try.
 //
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.

@@ -131,6 +131,28 @@ whole chain with `.WithTimeout(d)`. For the `producer | head` pattern — where 
 producer is killed by `SIGPIPE` once the consumer stops reading — mark the
 producer `.WithUncheckedInPipe()` so it doesn't fail the chain.
 
+### Retry
+
+Replay a failed run to success with `WithRetry` — you supply a classifier deciding
+which failures are worth another try (there is no default):
+
+```go
+out, err := processkit.Command("curl", "-sf", "https://example.com").
+	WithTimeout(10 * time.Second).
+	WithRetry(5, time.Second, func(err error) bool { // up to 5 attempts, 1s apart
+		return errors.Is(err, processkit.ErrTimeout) // only retry timeouts
+	}).
+	Run(ctx)
+```
+
+`WithRetry(maxAttempts, backoff, retryIf)` runs at most `maxAttempts` times total,
+sleeping `backoff` between tries, stopping on the first success, the first
+non-retryable failure, or the budget — returning the last error. A cancelled
+context is terminal (never retried). It applies to the success-requiring verbs
+(`Run` / `ExitCode` / `Probe`). For transient low-level spawn failures, the
+`IsTransient` helper is a ready-made classifier. This is **replay-to-success**;
+to keep a long-running process *alive* across crashes, use `Supervise` instead.
+
 ### Readiness probes
 
 A group-started process can be probed for readiness — and a probe **never kills**
