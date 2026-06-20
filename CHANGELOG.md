@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `*NotFoundError`, `*StartError`, and `*CancelError` (error strings bound and
   sanitize child-controlled output).
 - `ProcessRunner` interface + `JobRunner` — the dependency-injection / test seam.
+- `Group` — an explicit, shared kill-on-drop container: `NewGroup`, `Start`,
+  `Close`, graceful `Shutdown` (`ShutdownGrace` / `ShutdownOption`), `Members`,
+  `Mechanism`. `Close` reaps the whole tree; `Shutdown` does SIGTERM → grace →
+  SIGKILL on Unix, an atomic kill on Windows.
+- `RunningProcess` — a live handle (`Pid`, `Wait`, `Kill`) for group-started
+  processes; `StartOption` reserved for future per-process options.
+- Batch helpers: `WaitAny` / `WaitAll` over started processes, and
+  concurrency-capped `OutputAll` (returning `BatchOutput`).
 
 ### Changed
 -

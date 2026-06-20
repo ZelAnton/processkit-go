@@ -138,6 +138,50 @@ func TestOutputAll(t *testing.T) {
 	}
 }
 
+func TestGroup_Members(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	ctx := context.Background()
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+	defer g.Close()
+
+	live, err := g.Start(ctx, Command(selfExe(t)).WithEnv(helperEnv("sleep")...))
+	if err != nil {
+		t.Fatalf("Start live: %v", err)
+	}
+	gone, err := g.Start(ctx, Command(selfExe(t)).WithEnv(helperEnv("exit", "PK_CODE=0")...))
+	if err != nil {
+		t.Fatalf("Start gone: %v", err)
+	}
+
+	if !containsPid(g.Members(), live.Pid()) {
+		t.Fatalf("live process %d not in Members %v", live.Pid(), g.Members())
+	}
+	if _, err := gone.Wait(ctx); err != nil {
+		t.Fatalf("Wait gone: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for containsPid(g.Members(), gone.Pid()) {
+		if time.Now().After(deadline) {
+			t.Fatalf("exited process %d still listed in Members %v", gone.Pid(), g.Members())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func containsPid(pids []int, pid int) bool {
+	for _, p := range pids {
+		if p == pid {
+			return true
+		}
+	}
+	return false
+}
+
 func TestGroup_StartNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-subprocess test")

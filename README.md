@@ -58,6 +58,25 @@ Pick the verb that fits: `Output` (the full `Result`), `Run` (trimmed stdout, mu
 succeed), `ExitCode` (the code), or `Probe` (a yes/no predicate). Bound a run with
 `.WithTimeout(d)` and tear the whole tree down by cancelling the `context`.
 
+For several processes that must die together — a server and its helpers — use a
+`Group`, a shared kill-on-drop container:
+
+```go
+group, err := processkit.NewGroup()
+if err != nil {
+	log.Fatal(err)
+}
+defer group.Close() // reaps the whole tree, grandchildren included
+
+server, err := group.Start(ctx, processkit.Command("my-server"))
+if err != nil {
+	log.Fatal(err)
+}
+_ = server
+// ... use the server; group.Shutdown(ctx) ends it gracefully (SIGTERM → grace →
+// SIGKILL on Unix; an atomic kill on Windows).
+```
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
