@@ -26,9 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Mechanism`. `Close` reaps the whole tree; `Shutdown` does SIGTERM → grace →
   SIGKILL on Unix, an atomic kill on Windows.
 - `RunningProcess` — a live handle (`Pid`, `Wait`, `Kill`) for group-started
-  processes; `StartOption` reserved for future per-process options.
+  processes.
 - Batch helpers: `WaitAny` / `WaitAll` over started processes, and
   concurrency-capped `OutputAll` (returning `BatchOutput`).
+- Streaming & interactive I/O for `Group.Start`, via composable `StartOption`s:
+  - `StreamLines` + `RunningProcess.Lines` — a merged stdout/stderr line channel
+    of `Line{Stream StreamID; Text string}`, closed at EOF.
+  - `OnStdoutLine` / `OnStderrLine` — per-line callbacks.
+  - `WithStdin` (interactive input), `WithStdout` / `WithStderr` (verbatim tees).
+  - Bounded-buffer policy: `BufferLines`, `OnOverflow` (`OverflowBlock` default /
+    `OverflowDropNewest`), with `RunningProcess.DroppedLines`.
+  - `WithDecoder` (non-UTF-8 console output; no new dependency) and
+    `WithMaxLineBytes` (bounded memory on newline-free streams).
 
 ### Changed
 -

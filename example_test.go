@@ -51,3 +51,31 @@ func ExampleGroup() {
 	// Unix; an atomic kill on Windows):
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
 }
+
+func ExampleGroup_streaming() {
+	ctx := context.Background()
+
+	group, err := processkit.NewGroup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close()
+
+	// Stream a child's output line by line over a merged channel.
+	proc, err := group.Start(ctx,
+		processkit.Command("journalctl", "-f"),
+		processkit.StreamLines())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Range until the channel closes (the process produced all its output);
+	// cancelling ctx tears the tree down and closes the channel early.
+	for line := range proc.Lines() {
+		if line.Stream == processkit.StreamStderr {
+			fmt.Fprintln(log.Writer(), line.Text)
+			continue
+		}
+		fmt.Println(line.Text)
+	}
+}

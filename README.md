@@ -77,6 +77,38 @@ _ = server
 // SIGKILL on Unix; an atomic kill on Windows).
 ```
 
+### Streaming & interactive I/O
+
+A group-started process can stream its output line by line. `StreamLines` enables
+a single merged channel of stdout **and** stderr lines, each tagged with its
+stream; it closes when the process has produced all its output (or when you cancel
+the context):
+
+```go
+proc, err := group.Start(ctx, processkit.Command("journalctl", "-f"),
+	processkit.StreamLines())
+if err != nil {
+	log.Fatal(err)
+}
+for line := range proc.Lines() {
+	fmt.Printf("[%s] %s\n", line.Stream, line.Text)
+}
+```
+
+The pieces compose — mix and match per start:
+
+- **Callbacks:** `OnStdoutLine(fn)` / `OnStderrLine(fn)` invoke `fn` per line.
+- **Tees:** `WithStdout(w)` / `WithStderr(w)` mirror the raw bytes to any
+  `io.Writer` (pass a `bytes.Buffer` to capture the full output while streaming).
+- **Interactive stdin:** `WithStdin(r)` feeds input from any `io.Reader`; pass the
+  read end of an `io.Pipe` to drive a child over time.
+- **Backpressure:** the channel is bounded (`BufferLines(n)`); by default a slow
+  reader applies backpressure. `OnOverflow(OverflowDropNewest)` instead drops
+  lines (counted by `proc.DroppedLines()`) so a slow reader never stalls the child.
+- **Encoding:** `WithDecoder(fn)` wraps each stream before line-splitting — plug in
+  a `golang.org/x/text/encoding` reader for non-UTF-8 console output (no extra
+  dependency is pulled into this module).
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

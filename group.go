@@ -29,11 +29,11 @@ func ShutdownGrace(d time.Duration) ShutdownOption {
 	return func(c *shutdownConfig) { c.grace = d }
 }
 
-// StartOption configures [Group.Start]. Reserved for per-process options (output
-// streaming, interactive stdin) that land in a later stage.
+// StartOption configures a single [Group.Start] — its output streaming, line
+// callbacks, and interactive stdin. See [WithStdout], [OnStdoutLine],
+// [StreamLines], [WithStdin], and the other With/On options. The zero set
+// discards the process's output.
 type StartOption func(*startConfig)
-
-type startConfig struct{}
 
 // Group is an explicit, shared kill-on-drop container for a set of processes.
 // Every process started into the group — and everything those processes spawn —
@@ -76,16 +76,25 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 	for _, o := range opts {
 		o(&scfg)
 	}
+	scfg.resolve()
+
 	inv := cmd.invocation()
 	ecmd := exec.CommandContext(ctx, inv.Program, inv.Args...)
 	ecmd.Dir = inv.Dir
 	ecmd.Env = inv.Env
 	ecmd.WaitDelay = waitDelay
 
+	// Configure before opening any pipe, so a Configure failure (e.g. a future
+	// cgroup backend) can't strand a half-created pipe's file descriptors.
 	if err := g.job.Configure(ecmd); err != nil {
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
+	stdoutR, stderrR, err := scfg.preparePipes(ecmd)
+	if err != nil {
+		return nil, &StartError{Program: inv.Program, Err: err}
+	}
 	if err := ecmd.Start(); err != nil {
+		closePipes(stdoutR, stderrR)
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, &NotFoundError{Program: inv.Program, Searched: searchedPath(inv.Program)}
 		}
@@ -97,6 +106,7 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		// spawned is only reaped at Group.Close — an accepted edge case.
 		_ = ecmd.Process.Kill()
 		_ = ecmd.Wait()
+		closePipes(stdoutR, stderrR)
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
 
@@ -105,7 +115,9 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		program:   inv.Program,
 		mechanism: g.mechanism,
 		done:      make(chan struct{}),
+		stop:      make(chan struct{}),
 	}
+	scfg.launchDrains(p, ctx, stdoutR, stderrR)
 	go p.reap()
 
 	g.mu.Lock()
@@ -140,10 +152,16 @@ func (g *Group) Close() error {
 		return nil
 	}
 	g.closed = true
+	procs := append([]*RunningProcess(nil), g.procs...)
 	g.mu.Unlock()
 
 	killErr := g.job.Kill()
 	closeErr := g.job.Close()
+	// Release any streaming drain blocked on a full, abandoned Lines() channel, so
+	// Close never leaks the drain/reap goroutines.
+	for _, p := range procs {
+		p.signalStop()
+	}
 	if killErr != nil {
 		return killErr
 	}

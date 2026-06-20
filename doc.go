@@ -25,6 +25,13 @@
 // on Windows). [WaitAny] / [WaitAll] race or join started processes, and [OutputAll]
 // runs a batch of commands with a concurrency cap.
 //
+// A group-started process can stream its output: pass [StreamLines] and range over
+// [RunningProcess.Lines], a merged stdout/stderr channel of tagged [Line]s that
+// closes at EOF. Per-line callbacks ([OnStdoutLine] / [OnStderrLine]), raw tees
+// ([WithStdout] / [WithStderr]), interactive [WithStdin], a bounded-buffer policy
+// ([BufferLines] / [OnOverflow]), and an encoding [WithDecoder] all compose as
+// [StartOption]s on [Group.Start].
+//
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.
 //

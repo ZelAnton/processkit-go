@@ -1,6 +1,7 @@
 package processkit
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -66,6 +67,31 @@ func TestMain(m *testing.M) {
 			_ = os.WriteFile(pf, []byte(strconv.Itoa(gc.Process.Pid)), 0o600)
 		}
 		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "emitlines":
+		// Emit PK_LINES lines to stdout ("out N"), and to stderr ("err N") every
+		// PK_STDERR_EVERY-th line, sleeping PK_DELAY_MS between lines. Used to drive
+		// the streaming tests with deterministic, ordered output.
+		n := envInt("PK_LINES", 3)
+		stderrEvery := envInt("PK_STDERR_EVERY", 0)
+		delay := time.Duration(envInt("PK_DELAY_MS", 0)) * time.Millisecond
+		for i := 1; i <= n; i++ {
+			fmt.Fprintf(os.Stdout, "out %d\n", i)
+			if stderrEvery > 0 && i%stderrEvery == 0 {
+				fmt.Fprintf(os.Stderr, "err %d\n", i)
+			}
+			if delay > 0 {
+				time.Sleep(delay)
+			}
+		}
+		os.Exit(0)
+	case "catlines":
+		// Echo each line of stdin to stdout as "echo: <line>" until EOF, then exit.
+		// Drives the interactive-stdin test.
+		sc := bufio.NewScanner(os.Stdin)
+		for sc.Scan() {
+			fmt.Fprintf(os.Stdout, "echo: %s\n", sc.Text())
+		}
 		os.Exit(0)
 	case "termexit":
 		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.
