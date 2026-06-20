@@ -46,6 +46,10 @@ func (p *RunningProcess) reap() {
 	err := p.cmd.Wait()
 	switch {
 	case p.cmd.ProcessState != nil:
+		// The exit status is authoritative: a late pipe-close (exec.ErrWaitDelay)
+		// or similar non-fatal Wait error is intentionally ignored when we have a
+		// ProcessState. These fields are read by Wait/WaitAny/WaitAll/Members only
+		// after p.done is closed below, so the writes are safely published.
 		p.outcome = outcomeOf(p.cmd.ProcessState)
 	case err != nil:
 		p.waitErr = err

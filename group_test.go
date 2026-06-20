@@ -223,6 +223,75 @@ func TestGroup_ConcurrentStartClose(t *testing.T) {
 	_ = g.Close() // idempotent
 }
 
+// TestGroup_StartAfterClose verifies a Start on an already-closed group is
+// refused (errGroupClosed) rather than leaving an uncontained child.
+func TestGroup_StartAfterClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+	if err := g.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	_, err = g.Start(context.Background(), Command(selfExe(t)).WithEnv(helperEnv("sleep")...))
+	if !errors.Is(err, errGroupClosed) {
+		t.Fatalf("Start after Close: err = %v, want errGroupClosed", err)
+	}
+}
+
+// TestGroup_StartRacingCloseNoLeak overlaps streaming Starts (whose Lines channel
+// is never drained, so each drain would block under the default OverflowBlock)
+// with Close, then asserts every successfully-started process is reaped — i.e.
+// Close reaches even a process registered as it was closing, leaking no
+// drain/reap goroutine and orphaning no child. Run under -race.
+func TestGroup_StartRacingCloseNoLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+
+	var mu sync.Mutex
+	var started []*RunningProcess
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p, err := g.Start(context.Background(),
+				Command(selfExe(t)).WithEnv(helperEnv("emitlines", "PK_LINES=500")...),
+				StreamLines(), BufferLines(1))
+			if err != nil {
+				return // lost the race to Close — refused, no leak
+			}
+			mu.Lock()
+			started = append(started, p)
+			mu.Unlock()
+		}()
+	}
+	time.Sleep(20 * time.Millisecond) // let some Starts land before we close
+	if err := g.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	wg.Wait()
+	_ = g.Close() // idempotent
+
+	// Every started process must be reaped — Wait returns promptly, not hangs.
+	for _, p := range started {
+		wctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if _, err := p.Wait(wctx); err != nil {
+			cancel()
+			t.Fatalf("process %d not reaped after Close: %v — goroutine leak", p.Pid(), err)
+		}
+		cancel()
+	}
+}
+
 func waitPidFile(t *testing.T, path string) int {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

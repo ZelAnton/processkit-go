@@ -25,6 +25,8 @@ func WaitAny(ctx context.Context, procs ...*RunningProcess) (int, Outcome, error
 	if chosen == len(procs) { // the ctx.Done() case
 		return 0, Outcome{}, ctx.Err()
 	}
+	// Safe to read outcome/waitErr unguarded: reap writes them before closing done,
+	// and we only reach here by receiving that close.
 	return chosen, procs[chosen].outcome, procs[chosen].waitErr
 }
 

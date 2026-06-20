@@ -1,6 +1,7 @@
 package processkit
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -91,9 +92,15 @@ type CancelError struct {
 	Cause   error // context.Canceled or context.DeadlineExceeded
 }
 
-// Error renders the cancellation.
+// Error renders the cancellation, distinguishing a cancelled context from an
+// elapsed parent deadline (the Is/Unwrap match against [ErrCancelled] and the
+// underlying context error is unaffected either way).
 func (e *CancelError) Error() string {
-	return fmt.Sprintf("processkit: %s cancelled", quoteProgram(e.Program))
+	reason := "cancelled"
+	if errors.Is(e.Cause, context.DeadlineExceeded) {
+		reason = "context deadline exceeded"
+	}
+	return fmt.Sprintf("processkit: %s %s", quoteProgram(e.Program), reason)
 }
 
 // Is matches the ErrCancelled sentinel.

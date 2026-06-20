@@ -35,5 +35,14 @@
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.
 //
+// Context cancellation is reported two ways, by design: the capture verbs wrap it
+// in a [*CancelError] (they own the run, so they convert cancellation into a rich
+// typed error), while the live-handle observers — [RunningProcess.Wait], [WaitAny],
+// [WaitAll] — return the bare context error, so you can errors.Is it against
+// context.Canceled / context.DeadlineExceeded without unwrapping. Note also that
+// the stream options ([WithStdin], [WithStdout], [StreamLines], …) are
+// package-level functions, not [Cmd] methods, because they configure a live
+// [Group.Start] rather than the capture builder.
+//
 // Only Windows and Unix (Linux, macOS, the BSDs) are supported.
 package processkit

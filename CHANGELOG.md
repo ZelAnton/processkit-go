@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -
 
 ### Fixed
+- `Group.Start` racing `Group.Close` no longer leaks the drain/reap goroutines or
+  (on Unix) orphans the child: containment (`Assign`) and registration now happen
+  under the group lock with a closed-group check, so a process is either torn down
+  by the `Close` that snapshots it or refused (a `*StartError` wrapping a
+  closed-group error) and torn down by `Start` itself.
 - macOS/BSD: `Group.Close` / `Shutdown` no longer return a spurious
   "operation not permitted" when the only remaining group members are unreaped
   zombies (`killpg` returns `EPERM` there, where Linux returns `ESRCH`); the

@@ -18,6 +18,10 @@ const sigTERM = 15
 // before hard-killing survivors, when no grace is given.
 const defaultShutdownGrace = 5 * time.Second
 
+// errGroupClosed is returned (wrapped in a [*StartError]) when Start races a
+// concurrent Close and loses — the child is torn down rather than left orphaned.
+var errGroupClosed = errors.New("processkit: Start on a closed group")
+
 // ShutdownOption configures [Group.Shutdown].
 type ShutdownOption func(*shutdownConfig)
 
@@ -68,9 +72,12 @@ func (g *Group) Mechanism() Mechanism { return g.mechanism }
 // Start uses cmd's program, arguments, working directory, and environment, but
 // NOT its WithTimeout / WithOkCodes / WithRunner — those configure the capture
 // verbs ([Cmd.Output] etc.), not a live start. Bound a started process with the
-// ctx you pass and tear it down with [RunningProcess.Kill] or [Group.Close]. A
-// group-started process discards its stdout/stderr for now; capture and streaming
-// (and the per-process options that configure them) land in a later stage.
+// ctx you pass and tear it down with [RunningProcess.Kill] or [Group.Close].
+//
+// By default a group-started process discards its stdout/stderr. Pass stream
+// [StartOption]s to observe its I/O: [StreamLines] (then range [RunningProcess.Lines]),
+// the [OnStdoutLine] / [OnStderrLine] callbacks, the [WithStdout] / [WithStderr]
+// tees, and [WithStdin] for interactive input.
 func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*RunningProcess, error) {
 	var scfg startConfig
 	for _, o := range opts {
@@ -100,7 +107,23 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		}
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
+
+	// Contain and register the child under g.mu, serialized against Close: either
+	// we Assign and record it before Close snapshots the members (so Close tears it
+	// down), or we observe g.closed and tear it down ourselves. Never an orphan,
+	// and never a drain/reap goroutine that outlives Close. Holding the lock across
+	// Assign is also what keeps the Unix pgid list from being killed between Assign
+	// and registration.
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		_ = ecmd.Process.Kill()
+		_ = ecmd.Wait()
+		closePipes(stdoutR, stderrR)
+		return nil, &StartError{Program: inv.Program, Err: errGroupClosed}
+	}
 	if err := g.job.Assign(ecmd); err != nil {
+		g.mu.Unlock()
 		// Containment failed: kill the direct child. On a shared group we can't
 		// job.Kill (it would reap siblings), so a grandchild this child already
 		// spawned is only reaped at Group.Close — an accepted edge case.
@@ -109,7 +132,6 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		closePipes(stdoutR, stderrR)
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
-
 	p := &RunningProcess{
 		cmd:       ecmd,
 		program:   inv.Program,
@@ -117,12 +139,13 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		done:      make(chan struct{}),
 		stop:      make(chan struct{}),
 	}
-	scfg.launchDrains(p, ctx, stdoutR, stderrR)
-	go p.reap()
-
-	g.mu.Lock()
 	g.procs = append(g.procs, p)
 	g.mu.Unlock()
+
+	// Launch the drains and reaper after registration so a concurrent Close (which
+	// has now snapshotted p) reliably reaches them via job.Kill + signalStop.
+	scfg.launchDrains(p, ctx, stdoutR, stderrR)
+	go p.reap()
 	return p, nil
 }
 
