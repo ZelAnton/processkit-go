@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -
 
 ### Fixed
--
+- macOS/BSD: `Group.Close` / `Shutdown` no longer return a spurious
+  "operation not permitted" when the only remaining group members are unreaped
+  zombies (`killpg` returns `EPERM` there, where Linux returns `ESRCH`); the
+  process-group teardown now treats it as the benign already-dead case.
 
 [Unreleased]: https://github.com/ZelAnton/processkit-go/commits/main

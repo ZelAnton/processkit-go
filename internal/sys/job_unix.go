@@ -50,9 +50,15 @@ func (j *pgroupJob) Signal(sig int) error {
 
 	var firstErr error
 	for _, pgid := range pgids {
-		// Negative pid targets the whole process group. ESRCH means that group is
-		// already gone — success for an idempotent broadcast.
-		if err := syscall.Kill(-pgid, syscall.Signal(sig)); err != nil && !errors.Is(err, syscall.ESRCH) {
+		// Negative pid targets the whole process group. Two errno values mean the
+		// group is effectively gone, both benign for an idempotent teardown of a
+		// group we own:
+		//   ESRCH — no such process group (every member already reaped).
+		//   EPERM — on macOS/BSD, signalling a group whose only remaining members
+		//           are unreaped zombies returns EPERM, not ESRCH; the processes
+		//           are already dead. (Linux returns ESRCH or success here.)
+		if err := syscall.Kill(-pgid, syscall.Signal(sig)); err != nil &&
+			!errors.Is(err, syscall.ESRCH) && !errors.Is(err, syscall.EPERM) {
 			if firstErr == nil {
 				firstErr = err
 			}
