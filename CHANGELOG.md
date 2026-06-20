@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sanitize child-controlled output).
 - `ProcessRunner` interface + `JobRunner` — the dependency-injection / test seam.
 - `Group` — an explicit, shared kill-on-drop container: `NewGroup`, `Start`,
-  `Close`, graceful `Shutdown` (`ShutdownGrace` / `ShutdownOption`), `Members`,
+  `Close`, graceful `Shutdown` (`ShutdownGrace` / `ShutdownOption`), `Processes`,
   `Mechanism`. `Close` reaps the whole tree; `Shutdown` does SIGTERM → grace →
   SIGKILL on Unix, an atomic kill on Windows.
 - `RunningProcess` — a live handle (`Pid`, `Wait`, `Kill`) for group-started
@@ -95,9 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   process group; where a cgroup exists but isn't the real root (systemd / a
   container) a requested limit still fails fast with `ErrResourceLimit`, never a
   silently-unbounded group.
-- Pre-freeze API polish: `Group.Processes() []*RunningProcess` (the live-handle
-  companion to `Group.Members() []int`, so you can `WaitAll` over a group without
-  retaining every `Start` handle); `Cmd.AppendEnv` / `CliClient.AppendEnv` (add to
+- Pre-freeze API polish: `Group.Processes() []*RunningProcess` (a snapshot of the
+  live process handles, so you can `WaitAll` over a group without retaining every
+  `Start` handle, or read their pids via `RunningProcess.Pid`); `Cmd.AppendEnv` /
+  `CliClient.AppendEnv` (add to
   the inherited environment, complementing the *replacing* `WithEnv` — the fix for
   the "inherit, plus set a few" footgun); and an `ErrStart` sentinel that
   `*StartError` matches via `errors.Is` (completing the sentinel-plus-typed-error

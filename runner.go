@@ -63,8 +63,8 @@ func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) 
 		runCtx, cancel = context.WithTimeout(parent, inv.Timeout)
 		defer cancel()
 	}
-	if parent.Err() != nil { // already cancelled / expired before we spawn anything
-		return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
+	if err := cancelledBy(parent, inv.Program); err != nil { // cancelled before we spawn anything
+		return nil, err
 	}
 
 	cmd := exec.CommandContext(runCtx, inv.Program, inv.Args...)
@@ -93,20 +93,17 @@ func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) 
 	if err := cmd.Start(); err != nil {
 		// A start that failed because the caller cancelled is a cancellation, not a
 		// spawn failure (mirrors the Assign-failure path below and Pipeline.Output).
-		if parent.Err() != nil {
-			return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
+		if cerr := cancelledBy(parent, inv.Program); cerr != nil {
+			return nil, cerr
 		}
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, &NotFoundError{Program: inv.Program, Searched: searchedPath(inv.Program)}
-		}
-		return nil, &StartError{Program: inv.Program, Err: err}
+		return nil, startErr(inv.Program, err)
 	}
 	if err := job.Assign(cmd); err != nil {
 		// Containment failed — tear down whatever exists; never leak an orphan.
 		_ = job.Kill()
 		_ = cmd.Wait()
-		if parent.Err() != nil {
-			return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
+		if cerr := cancelledBy(parent, inv.Program); cerr != nil {
+			return nil, cerr
 		}
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
@@ -117,23 +114,20 @@ func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) 
 	_ = job.Kill() // reap any grandchildren that outlived the direct child
 
 	// The caller's context ending the run wins over everything: no captured Result.
-	if parent.Err() != nil {
+	if cerr := cancelledBy(parent, inv.Program); cerr != nil {
 		r.log.cancelled(inv.Program)
-		return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
+		return nil, cerr
 	}
 
-	var outcome Outcome
+	deadlineFired := inv.Timeout > 0 && errors.Is(runCtx.Err(), context.DeadlineExceeded)
 	switch {
-	case inv.Timeout > 0 && errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case deadlineFired:
 		r.log.timedOut(inv.Program, inv.Timeout)
-		outcome = timedOut()
-	case cmd.ProcessState != nil:
-		outcome = outcomeOf(cmd.ProcessState)
-	case waitErr != nil:
+	case cmd.ProcessState == nil && waitErr != nil:
+		// No status and a wait error with no deadline/cancel — a genuine spawn/wait failure.
 		return nil, &StartError{Program: inv.Program, Err: waitErr}
-	default:
-		outcome = exited(0)
 	}
+	outcome := resolveOutcome(cmd.ProcessState, deadlineFired)
 	r.log.exited(inv.Program, outcome, duration)
 
 	return &Result{
@@ -159,6 +153,40 @@ func toMechanism(m sys.Mechanism) Mechanism {
 	default:
 		return MechanismUnknown
 	}
+}
+
+// resolveOutcome maps a finished run to an [Outcome] with the fixed precedence the
+// spawn paths share: the run's own deadline wins over the exit status (a process
+// that exits exactly as its deadline fires is reported as a timeout), then the
+// captured ProcessState, then a clean exit(0). ps may be nil (no state captured).
+func resolveOutcome(ps *os.ProcessState, deadlineFired bool) Outcome {
+	switch {
+	case deadlineFired:
+		return timedOut()
+	case ps != nil:
+		return outcomeOf(ps)
+	default:
+		return exited(0)
+	}
+}
+
+// cancelledBy returns a [*CancelError] when the caller's context ended the run —
+// which wins over the run's own outcome — or nil otherwise. The single home for the
+// "caller cancel is an error, with no captured output" rule.
+func cancelledBy(parent context.Context, program string) error {
+	if parent.Err() != nil {
+		return &CancelError{Program: program, Cause: parent.Err()}
+	}
+	return nil
+}
+
+// startErr classifies a failed cmd.Start: a program that could not be located is a
+// [*NotFoundError] (matching [ErrNotFound]); anything else is a [*StartError].
+func startErr(program string, err error) error {
+	if errors.Is(err, exec.ErrNotFound) {
+		return &NotFoundError{Program: program, Searched: searchedPath(program)}
+	}
+	return &StartError{Program: program, Err: err}
 }
 
 // searchedPath returns the PATH directories an exec lookup would have searched

@@ -230,6 +230,17 @@ func helperEnv(mode string, extra ...string) []string {
 	return append(env, extra...)
 }
 
+// memberPids snapshots the pids of a group's live processes (via Group.Processes,
+// which replaced the old Group.Members []int accessor).
+func memberPids(g *Group) []int {
+	procs := g.Processes()
+	pids := make([]int, 0, len(procs))
+	for _, p := range procs {
+		pids = append(pids, p.Pid())
+	}
+	return pids
+}
+
 // selfExe is the path to the test binary, used to re-exec helpers. It takes a
 // testing.TB so tests and benchmarks can both use it.
 func selfExe(tb testing.TB) string {

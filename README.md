@@ -273,7 +273,7 @@ silent no-op**. The honesty matrix:
 | `Signal(other / RawSignal)`| ✅ killpg           | ❌ `ErrUnsupported`  |
 | `Suspend` / `Resume`       | ✅ SIGSTOP / SIGCONT| ❌ `ErrUnsupported`  |
 | `Adopt`                    | ✅ setpgid / solo   | ✅ AssignProcessToJobObject |
-| `Members`                  | ✅                  | ✅                 |
+| `Processes`                | ✅                  | ✅                 |
 
 ### Readiness probes
 

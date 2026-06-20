@@ -248,7 +248,7 @@ func TestWaitForLine_Real(t *testing.T) {
 	if !strings.Contains(line, "listening") {
 		t.Fatalf("matched line = %q", line)
 	}
-	if !containsPid(g.Members(), p.Pid()) {
+	if !containsPid(memberPids(g), p.Pid()) {
 		t.Fatal("the probe killed the child — a probe must leave it running")
 	}
 }
@@ -278,7 +278,7 @@ func TestWaitForPort_Real(t *testing.T) {
 	if err := p.WaitForPort(ctx, addr, 5*time.Second); err != nil {
 		t.Fatalf("WaitForPort(%s): %v", addr, err)
 	}
-	if !containsPid(g.Members(), p.Pid()) {
+	if !containsPid(memberPids(g), p.Pid()) {
 		t.Fatal("the probe killed the child")
 	}
 }
@@ -302,7 +302,7 @@ func TestWaitForLine_RealNotReadyLeavesChildAlive(t *testing.T) {
 	if !errors.Is(err, ErrNotReady) {
 		t.Fatalf("err = %v, want ErrNotReady (the silent child never matched)", err)
 	}
-	if !containsPid(g.Members(), p.Pid()) {
+	if !containsPid(memberPids(g), p.Pid()) {
 		t.Fatal("a NotReady probe must leave the child running")
 	}
 }

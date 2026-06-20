@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -261,45 +260,21 @@ func (c *Cmd) Output(ctx context.Context) (*Result, error) {
 // whitespace trimmed. A non-zero exit, timeout, signal kill, or cancellation is
 // an error. Honours [Cmd.WithRetry].
 func (c *Cmd) Run(ctx context.Context) (string, error) {
-	return retryRun(ctx, c, func(res *Result) (string, error) {
-		if err := res.Err(); err != nil {
-			return "", err
-		}
-		return strings.TrimRight(res.Stdout(), " \t\r\n"), nil
-	})
+	return retryRun(ctx, c, resultRun)
 }
 
 // ExitCode runs the command and returns its exit code. A run with no exit code
 // (a timeout or signal kill) is an error rather than a fabricated -1. Honours
 // [Cmd.WithRetry].
 func (c *Cmd) ExitCode(ctx context.Context) (int, error) {
-	return retryRun(ctx, c, func(res *Result) (int, error) {
-		code, ok := res.Code()
-		if !ok {
-			return 0, res.toExitError()
-		}
-		return code, nil
-	})
+	return retryRun(ctx, c, resultExitCode)
 }
 
 // Probe runs the command as a yes/no predicate: exit 0 → true, exit 1 → false,
 // anything else (another code, a timeout, a signal kill) → error. OkCodes does
 // not apply to a probe. Honours [Cmd.WithRetry].
 func (c *Cmd) Probe(ctx context.Context) (bool, error) {
-	return retryRun(ctx, c, func(res *Result) (bool, error) {
-		code, ok := res.Code()
-		if !ok {
-			return false, res.toExitError()
-		}
-		switch code {
-		case 0:
-			return true, nil
-		case 1:
-			return false, nil
-		default:
-			return false, res.toExitError()
-		}
-	})
+	return retryRun(ctx, c, resultProbe)
 }
 
 // retryRun runs c and applies extract (a verb's success check) to each attempt,

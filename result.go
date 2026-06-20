@@ -190,6 +190,40 @@ func (r *Result) Err() error {
 	return r.toExitError()
 }
 
+// resultRun, resultExitCode, and resultProbe are the shared success-requiring
+// interpretations behind the Run / ExitCode / Probe verbs of both [Cmd] and
+// [Pipeline] (Cmd runs them through retryRun; Pipeline applies them to its folded
+// Result). Keeping them here makes the verb semantics one definition, not two.
+func resultRun(res *Result) (string, error) {
+	if err := res.Err(); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(res.Stdout(), " \t\r\n"), nil
+}
+
+func resultExitCode(res *Result) (int, error) {
+	code, ok := res.Code()
+	if !ok {
+		return 0, res.toExitError()
+	}
+	return code, nil
+}
+
+func resultProbe(res *Result) (bool, error) {
+	code, ok := res.Code()
+	if !ok {
+		return false, res.toExitError()
+	}
+	switch code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, res.toExitError()
+	}
+}
+
 func (r *Result) toExitError() *ExitError {
 	return &ExitError{
 		Program:   r.program,

@@ -115,8 +115,8 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 		runCtx, cancel = context.WithTimeout(parent, p.timeout)
 		defer cancel()
 	}
-	if parent.Err() != nil { // already cancelled / expired before we spawn anything
-		return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
+	if err := cancelledBy(parent, p.name()); err != nil { // cancelled before we spawn anything
+		return nil, err
 	}
 
 	job, err := sys.NewJob(sys.Limits{}) // a pipeline shares one container, no resource caps
@@ -147,8 +147,8 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 		}
 		// The caller's context ending the run wins: a Start/Assign that failed
 		// because the caller cancelled is a cancellation, not a spawn failure.
-		if parent.Err() != nil {
-			return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
+		if cerr := cancelledBy(parent, p.name()); cerr != nil {
+			return nil, cerr
 		}
 		return nil, err
 	}
@@ -191,10 +191,7 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 			return fail(&StartError{Program: inv.Program, Err: err})
 		}
 		if err := ecmd.Start(); err != nil {
-			if errors.Is(err, exec.ErrNotFound) {
-				return fail(&NotFoundError{Program: inv.Program, Searched: searchedPath(inv.Program)})
-			}
-			return fail(&StartError{Program: inv.Program, Err: err})
+			return fail(startErr(inv.Program, err))
 		}
 		started = append(started, ecmd)
 		if err := job.Assign(ecmd); err != nil {
@@ -225,8 +222,8 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 	_ = job.Kill() // reap any grandchildren that outlived the chain
 
 	// The caller's context ending the run wins over everything: no captured Result.
-	if parent.Err() != nil {
-		return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
+	if err := cancelledBy(parent, p.name()); err != nil {
+		return nil, err
 	}
 	// The pipeline's own deadline: a whole-chain timeout. The Result is deliberately
 	// skeletal — no partial stdout (the chain was abandoned), no stderr or ok-codes,
@@ -244,15 +241,9 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 
 	stages := make([]stageOutcome, n)
 	for i, stage := range p.stages {
-		var oc Outcome
-		switch {
-		case stage.timeout > 0 && errors.Is(stageCtxs[i].Err(), context.DeadlineExceeded):
-			oc = timedOut() // this stage's own deadline fired
-		case ecmds[i].ProcessState != nil:
-			oc = outcomeOf(ecmds[i].ProcessState)
-		default:
-			oc = exited(0)
-		}
+		// This stage's own deadline wins over its exit status (same precedence as a
+		// single run); see resolveOutcome.
+		oc := resolveOutcome(ecmds[i].ProcessState, stage.timeout > 0 && errors.Is(stageCtxs[i].Err(), context.DeadlineExceeded))
 		stages[i] = stageOutcome{
 			program:   stage.program,
 			args:      append([]string(nil), stage.args...),
@@ -274,10 +265,7 @@ func (p *Pipeline) Run(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := res.Err(); err != nil {
-		return "", err
-	}
-	return strings.TrimRight(res.Stdout(), " \t\r\n"), nil
+	return resultRun(res)
 }
 
 // ExitCode runs the chain and returns the pipefail-attributed exit code. A chain
@@ -287,11 +275,7 @@ func (p *Pipeline) ExitCode(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	code, ok := res.Code()
-	if !ok {
-		return 0, res.toExitError()
-	}
-	return code, nil
+	return resultExitCode(res)
 }
 
 // Probe runs the chain as a yes/no predicate on the pipefail-attributed code:
@@ -301,18 +285,7 @@ func (p *Pipeline) Probe(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	code, ok := res.Code()
-	if !ok {
-		return false, res.toExitError()
-	}
-	switch code {
-	case 0:
-		return true, nil
-	case 1:
-		return false, nil
-	default:
-		return false, res.toExitError()
-	}
+	return resultProbe(res)
 }
 
 // stageOutcome is one stage's contribution to the pipefail fold.

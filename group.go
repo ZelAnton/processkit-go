@@ -233,28 +233,11 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 	return p, nil
 }
 
-// Members returns a snapshot of the live processes' pids.
-func (g *Group) Members() []int {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	pids := make([]int, 0, len(g.procs))
-	for _, p := range g.procs {
-		select {
-		case <-p.done: // exited — not a live member
-		default:
-			if pid := p.Pid(); pid != 0 {
-				pids = append(pids, pid)
-			}
-		}
-	}
-	return pids
-}
-
-// Processes returns a snapshot of the live process handles in the group — the
-// handle companion to [Group.Members] (which returns pids). A process that has
-// exited is omitted. Use it to [WaitAll] over a group's processes without having
-// retained every [Group.Start] handle yourself. Adopted processes are not included
-// (they have no handle; like [Group.Members]).
+// Processes returns a snapshot of the live process handles in the group. A process
+// that has exited is omitted. Use it to inspect the group, [WaitAll] over its
+// processes without having retained every [Group.Start] handle yourself, or read
+// their pids (range and call [RunningProcess.Pid]). Adopted processes are not
+// included (they have no handle).
 func (g *Group) Processes() []*RunningProcess {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -302,7 +285,7 @@ func (g *Group) Resume() error { return mapUnsupported(g.job.Resume(), "resume")
 // POSIX process group it becomes a group leader when it can (capturing its future
 // descendants too), or is tracked individually if it has already exec'd. A process
 // that has already exited is a benign success. The adopted process is not listed by
-// [Group.Members] (that reports the processes you Started through the group).
+// [Group.Processes] (which reports the processes you Started through the group).
 //
 // An adopted process counts against [WithMaxProcesses]: on a group capped at its
 // active-process limit, Adopt is refused (the process is not pulled in) and returns

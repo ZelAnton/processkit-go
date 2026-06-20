@@ -89,9 +89,9 @@ func TestGroup_Processes(t *testing.T) {
 	if got := len(g.Processes()); got != 2 {
 		t.Fatalf("Processes() = %d live handles, want 2", got)
 	}
-	// The handles are usable — and there are as many as Members() reports.
-	if len(g.Processes()) != len(g.Members()) {
-		t.Errorf("Processes() and Members() disagree: %d vs %d", len(g.Processes()), len(g.Members()))
+	// The handles carry the pids.
+	if pids := memberPids(g); len(pids) != 2 {
+		t.Errorf("memberPids = %v, want 2 pids", pids)
 	}
 }
 

@@ -159,16 +159,16 @@ func TestGroup_Members(t *testing.T) {
 		t.Fatalf("Start gone: %v", err)
 	}
 
-	if !containsPid(g.Members(), live.Pid()) {
-		t.Fatalf("live process %d not in Members %v", live.Pid(), g.Members())
+	if !containsPid(memberPids(g), live.Pid()) {
+		t.Fatalf("live process %d not in Members %v", live.Pid(), memberPids(g))
 	}
 	if _, err := gone.Wait(ctx); err != nil {
 		t.Fatalf("Wait gone: %v", err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for containsPid(g.Members(), gone.Pid()) {
+	for containsPid(memberPids(g), gone.Pid()) {
 		if time.Now().After(deadline) {
-			t.Fatalf("exited process %d still listed in Members %v", gone.Pid(), g.Members())
+			t.Fatalf("exited process %d still listed in Members %v", gone.Pid(), memberPids(g))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
