@@ -131,6 +131,29 @@ whole chain with `.WithTimeout(d)`. For the `producer | head` pattern — where 
 producer is killed by `SIGPIPE` once the consumer stops reading — mark the
 producer `.WithUncheckedInPipe()` so it doesn't fail the chain.
 
+### Supervision
+
+Keep a command alive with `Supervise` — it re-runs the command on a crash with
+capped-exponential backoff (and jitter), until a stop condition is met:
+
+```go
+outcome, err := processkit.Supervise(processkit.Command("my-worker")).
+	WithMaxRestarts(10).               // give up after 10 restarts
+	WithBackoff(time.Second, 2).       // 1s, 2s, 4s, … capped at WithMaxBackoff (30s)
+	Run(ctx)
+// outcome.Stopped is StoppedPolicySatisfied / StoppedByPredicate / StoppedRestartsExhausted;
+// outcome.Final holds the last run's Result; outcome.Restarts counts the re-runs.
+```
+
+A crash is any non-success run (a non-zero/rejected exit, a timeout, a signal
+kill, or a spawn failure). The default policy (`RestartOnCrash`) stops on the
+first clean run; `WithRestart(RestartAlways)` keeps re-running and
+`WithRestart(RestartNever)` runs once. Stop on a custom condition with
+`StopWhen(func(*Result) bool)`. For a flap-prone service, turn on the
+failure-storm guard with `WithStormPause(d)` so a tight crash loop pauses instead
+of hammering. Supervision is sequential — the whole process tree is reaped before
+each restart — and a cancelled context ends it promptly.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

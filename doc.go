@@ -42,6 +42,14 @@
 // exempt from blame (the `producer | head` pattern). [Pipeline.WithTimeout] bounds
 // the whole chain.
 //
+// To keep a command alive, wrap it in a [Supervisor]: it re-runs the command on
+// a crash with capped-exponential backoff (plus jitter, and an optional
+// failure-storm guard) until a stop condition is met — a clean run, a
+// [Supervisor.StopWhen] predicate, or an exhausted restart budget. Supervision is
+// sequential and single-flight, so a command's whole tree is always reaped before
+// a restart. [Supervisor.Run] returns a [SupervisionOutcome] describing why it
+// stopped and how many restarts it took.
+//
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.
 //

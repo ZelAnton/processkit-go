@@ -52,6 +52,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `producer | head` pattern).
   - `ErrTooFewStages` sentinel for a pipeline run with fewer than two stages.
     On a pipeline `Result`, `Program` / `Args` reflect the attributed stage.
+- Supervision — keep a command alive via `Supervise(cmd *Cmd) *Supervisor`:
+  - `RestartPolicy` (`RestartOnCrash` default / `RestartAlways` / `RestartNever`);
+    a crash is any non-success run or a spawn failure.
+  - Capped-exponential backoff (`WithBackoff` / `WithMaxBackoff`) with ±50%
+    `WithJitter`; restart budget `WithMaxRestarts`.
+  - Opt-in failure-storm guard (`WithStormPause` / `WithFailureDecay` /
+    `WithFailureThreshold`): a tight crash loop pauses once the decaying failure
+    score crosses the threshold.
+  - `StopWhen(func(*Result) bool)` stop predicate (beats the policy); `WithRunner`
+    DI seam. `Run(ctx)` returns a `SupervisionOutcome` (`Final`, `Restarts`,
+    `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
+    reaped before each restart); a cancelled context or a terminal spawn failure
+    is an error.
 
 ### Changed
 -

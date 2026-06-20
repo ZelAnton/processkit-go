@@ -52,6 +52,21 @@ func ExampleGroup() {
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
 }
 
+func ExampleSupervisor() {
+	ctx := context.Background()
+
+	// Keep a worker alive: restart it on a crash with exponential backoff, and
+	// give up after 10 restarts.
+	outcome, err := processkit.Supervise(processkit.Command("my-worker")).
+		WithMaxRestarts(10).
+		WithBackoff(time.Second, 2).
+		Run(ctx)
+	if err != nil {
+		log.Fatal(err) // the caller's context was cancelled, or a run never started
+	}
+	fmt.Printf("supervision ended (%s) after %d restarts\n", outcome.Stopped, outcome.Restarts)
+}
+
 func ExamplePipe() {
 	ctx := context.Background()
 
