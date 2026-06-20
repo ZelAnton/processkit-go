@@ -1,5 +1,10 @@
 # processkit-go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/ZelAnton/processkit-go.svg)](https://pkg.go.dev/github.com/ZelAnton/processkit-go)
+[![CI](https://github.com/ZelAnton/processkit-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ZelAnton/processkit-go/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ZelAnton/processkit-go)](https://goreportcard.com/report/github.com/ZelAnton/processkit-go)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Kernel-backed, no-orphan child-process management for Go — a native implementation
 of the [processkit](https://github.com/ZelAnton/ProcessKit-rs) model.
 

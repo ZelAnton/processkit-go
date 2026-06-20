@@ -71,10 +71,13 @@ $RECYCLE.BIN/
 .claude/settings.local.json
 
 ## -------
-## Agent-local guidance — present on disk for tooling, never pushed.
-## `.claude/` here overrides the ship-negations above (a later dir-exclude wins).
+## Agent-local guidance & working notes — present on disk for tooling, never
+## pushed. `.claude/` here overrides the ship-negations above (a later
+## dir-exclude wins). `progress.md` is a session handoff doc (process/roadmap
+## notes) that travels with a folder copy but must stay off the public remote.
 ## -------
 /AGENTS.md
 /CLAUDE.md
 /CLAUDE.local.md
+/progress.md
 .claude/

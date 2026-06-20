@@ -63,8 +63,9 @@ func TestSelfCgroupRel(t *testing.T) {
 }
 
 func TestCgroupNameSaltStable(t *testing.T) {
-	if cgroupNameSalt() != cgroupNameSalt() {
-		t.Error("cgroupNameSalt must be stable within a process")
+	first, second := cgroupNameSalt(), cgroupNameSalt()
+	if first != second {
+		t.Errorf("cgroupNameSalt must be stable within a process: %q vs %q", first, second)
 	}
 }
 

@@ -1,0 +1,37 @@
+# golangci-lint configuration (v2 schema). Tuned for a small, dependency-light
+# library: the standard linters plus a few well-behaved extras, with formatting
+# owned by gofmt/goimports. Run locally with `golangci-lint run` (or `make lint`).
+version: "2"
+
+linters:
+  # The standard set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose   # an HTTP response body left unclosed
+    - errorlint   # correct errors.Is/As use and %w wrapping (load-bearing for our taxonomy)
+    - misspell    # common spelling mistakes in comments and strings
+    - noctx       # HTTP requests / exec without a context
+    - unconvert   # redundant type conversions
+    - usestdlibvars # use stdlib constants (e.g. http.MethodGet) over literals
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Test fixtures intentionally ignore some errors (best-effort cleanup, helper
+      # reaps) and spawn/listen without a context (exec.Command / net.Listen).
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ZelAnton/processkit-go

@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a new capability or an API change for processkit-go.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        processkit-go is a native Go reimplementation of the Rust `processkit`
+        crate. Proposals that map to an existing crate feature are easiest to
+        evaluate — please note the parallel if one exists.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what is awkward? Describe the use case, not just the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The API or behavior you'd like. A sketch of the signature/usage helps.
+      render: go
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why they fall short.
+    validations:
+      required: false
+
+  - type: input
+    id: crate-parallel
+    attributes:
+      label: Rust crate parallel
+      description: If this mirrors a `processkit` (Rust) feature, name it.
+    validations:
+      required: false

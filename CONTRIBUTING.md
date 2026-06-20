@@ -16,12 +16,18 @@ go test ./...
 CI also runs the tests with the race detector (`go test -race ./...`) on Linux; it
 needs cgo (a C compiler), so it is not required for the basic local loop.
 
-Before opening a pull request, also run the formatter and vet — CI gates on both:
+Before opening a pull request, also run the formatter, vet, and the meta-linter
+— CI gates on all three:
 
 ```sh
-gofmt -l .   # must print nothing; run `gofmt -w .` to fix
+gofmt -l .         # must print nothing; run `gofmt -w .` to fix
 go vet ./...
+golangci-lint run  # config in .golangci.yml; install from https://golangci-lint.run
 ```
+
+A [`Makefile`](Makefile) wraps the common loops — `make build`, `make test`,
+`make race`, `make lint`, and `make ci` (fmt + vet + lint + test). Run `make help`
+for the full list. The raw `go`/`gofmt` commands above work just as well.
 
 ## Conventions
 

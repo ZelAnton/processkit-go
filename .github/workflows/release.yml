@@ -52,7 +52,7 @@ jobs:
       # RELEASE_APP_ID + secret RELEASE_APP_PRIVATE_KEY) and checks out with it, so
       # the push runs as the App — add that App to the ruleset's bypass list. Until
       # it is configured the checkout falls back to GITHUB_TOKEN (fine while main is
-      # unprotected). Recipe: release-token-bypass.md.
+      # unprotected). Recipe: docs/release-token-bypass.md.
       # Actions are pinned to a full commit SHA (supply-chain hardening); the
       # trailing comment records the human-readable version. Dependabot bumps the
       # SHA and updates the comment on its weekly run.
@@ -71,7 +71,7 @@ jobs:
       # Mint a short-lived GitHub App installation token so the push to `main` runs as
       # the App (which sits in the branch-protection ruleset's bypass list). Skipped
       # until RELEASE_APP_ID is set; then the push falls back to GITHUB_TOKEN. See
-      # release-token-bypass.md.
+      # docs/release-token-bypass.md.
       - name: Mint GitHub App token
         id: app-token
         if: ${{ vars.RELEASE_APP_ID != '' }}

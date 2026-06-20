@@ -23,6 +23,12 @@ tab_width = 4
 indent_style = tab
 tab_width = 4
 
+# Make requires literal tabs to indent recipe lines — spaces yield a
+# "missing separator" error. Override the [*] space default.
+[{Makefile,*.mk}]
+indent_style = tab
+tab_width = 4
+
 # JSON config (.claude settings, etc.).
 [*.json]
 indent_style = space

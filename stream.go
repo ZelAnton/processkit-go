@@ -368,7 +368,7 @@ func (c *startConfig) drainOne(ctx context.Context, p *RunningProcess, id Stream
 		}
 		return
 	}
-	var src io.Reader = pipe
+	src := pipe
 	if tee != nil {
 		src = io.TeeReader(pipe, tee) // mirror raw bytes as the line path consumes them
 	}

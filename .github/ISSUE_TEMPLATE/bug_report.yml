@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a defect in processkit-go (a leak, panic, wrong exit code, or platform-specific misbehavior).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. To diagnose a process-containment bug we
+        almost always need the **platform**, the **active mechanism**, and a
+        minimal repro. Please don't paste argv/env that contains secrets.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe, and what did you expect instead?
+      placeholder: A child survived Group.Close on Linux when the cgroup wasn't writable…
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal Go snippet or sequence of calls. Smaller is better.
+      render: go
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other BSD
+    validations:
+      required: true
+
+  - type: input
+    id: mechanism
+    attributes:
+      label: Active mechanism
+      description: The value reported by Group.Mechanism() (e.g. JobObject, CgroupV2, ProcessGroup).
+      placeholder: CgroupV2
+    validations:
+      required: false
+
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version
+      description: Output of `go version`.
+      placeholder: go1.25.0 linux/amd64
+    validations:
+      required: true
+
+  - type: input
+    id: pk-version
+    attributes:
+      label: processkit-go version
+      description: Module version or commit (e.g. v0.x.y or a git SHA).
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant slog output or stack traces. Redact any secrets first.
+      render: text
+    validations:
+      required: false
