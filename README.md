@@ -31,10 +31,10 @@ platform can't honour an operation, processkit says so (`ErrUnsupported` /
 
 | Capability | Windows | Linux | macOS / BSD |
 | --- | --- | --- | --- |
-| Containment (no-orphan teardown) | Job Object — `KILL_ON_JOB_CLOSE`, kernel-enforced even if the parent is hard-killed | process group¹ | process group¹ |
+| Containment (no-orphan teardown) | Job Object — `KILL_ON_JOB_CLOSE`, kernel-enforced even if the parent is hard-killed | cgroup v2 where available², else process group¹ | process group¹ |
 | Run/capture, streaming, pipelines, supervision, retries, probes, CLI client, record/replay | ✅ | ✅ | ✅ |
 | Resource **stats** (`Group.Stats`, `RunningProcess.Profile`) | ✅ CPU + peak memory + count | per-process CPU/memory (`/proc`); group = count | count only (no `/proc`) |
-| Resource **limits** (`WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota`) | ✅ enforced (Job Object) | ❌ `ErrResourceLimit`² | ❌ `ErrResourceLimit` |
+| Resource **limits** (`WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota`) | ✅ enforced (Job Object) | ✅ cgroup v2 where delegated², else `ErrResourceLimit` | ❌ `ErrResourceLimit` |
 | `Signal(SignalKill)` (atomic whole-tree kill) | ✅ | ✅ | ✅ |
 | Other signals, `Suspend` / `Resume` | ❌ `ErrUnsupported` | ✅ | ✅ |
 | `Adopt` an external process | ✅ | ✅ | ✅ |
@@ -43,11 +43,13 @@ platform can't honour an operation, processkit says so (`ErrUnsupported` /
 escapes it, and teardown needs the parent to dispatch the kill (the `defer
 group.Close()` path), so it is best-effort rather than kernel-enforced.
 
-² A Linux **cgroup v2** backend that enforces limits (and strengthens containment)
-is planned; until then a limit requested on Linux fails fast rather than going
-unenforced. Even with cgroups, enforcement needs the process at the real cgroup-v2
-root — not under systemd or in an ordinary container — so fail-fast is the common
-path regardless.
+² On Linux, processkit prefers a **cgroup v2** subtree (atomic `clone3` placement,
+kernel ≥ 5.7; `cgroup.kill` teardown) — `Group.Mechanism()` reports `CgroupV2`.
+**Limit enforcement** additionally needs the process at the real cgroup-v2 root
+(controllers delegated): under systemd or in an ordinary container the controllers
+can't be enabled, so a requested limit fails fast with `ErrResourceLimit` rather
+than going unenforced. Where no cgroup can be made at all (no v2, no delegation,
+read-only fs), processkit falls back to a process group (limits → `ErrResourceLimit`).
 
 **Teardown asymmetry worth knowing:** only the Windows Job Object's
 `KILL_ON_JOB_CLOSE` survives a hard kill of the parent. On Unix the no-orphan
@@ -201,9 +203,10 @@ if mem, ok := prof.PeakMemoryBytes(); ok { … }  // every optional metric retur
 
 `Group.SampleStats(ctx, every)` returns a channel of snapshots. A metric a platform
 can't read is reported as unavailable (the `ok` bool), never an error — and the
-backends differ: the **Job Object** (Windows) reports count + CPU + peak memory;
-the **process group** (Unix, no cgroup yet) reports the count only. Per-process
-`RunningProcess.CPUTime` / `PeakMemoryBytes` work on Linux and Windows, not macOS.
+backends differ: the **Job Object** (Windows) and a **cgroup v2** group (Linux)
+report count + CPU + peak memory; the **process-group** fallback reports the count
+only. Per-process `RunningProcess.CPUTime` / `PeakMemoryBytes` work on Linux and
+Windows, not macOS.
 
 ### Resource limits
 
@@ -232,15 +235,19 @@ negative, non-finite) is rejected the same way. The honesty matrix:
 | Backend                         | `WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota` |
 | ------------------------------- | ----------------------------------------------------- |
 | Windows Job Object              | ✅ enforced (job memory / active-process / CPU hard cap¹) |
-| Linux / macOS / BSD (pgroup)    | ❌ `ErrResourceLimit` (no whole-tree cap primitive)   |
+| Linux cgroup v2 (real root)     | ✅ enforced (`memory.max` / `pids.max` / `cpu.max`)   |
+| Linux cgroup v2 (container / systemd) | ❌ `ErrResourceLimit` (controllers can't be delegated) |
+| Linux process group, macOS / BSD | ❌ `ErrResourceLimit` (no whole-tree cap primitive)  |
 
 ¹ The Windows CPU cap is expressed against *total* system CPU, so `WithCPUQuota` is
 approximate (converted via the host core count) and saturates at 100%.
 
-A Linux **cgroup v2** backend that enforces these is planned; until it lands, a cap
-requested on Linux fails fast rather than going unenforced. (Even with cgroups, the
-caps only apply where this process sits at the real cgroup-v2 root — not under
-systemd or in an ordinary container — so fail-fast is the common path regardless.)
+On Linux the caps are enforced by a **cgroup v2** subtree (`memory.max` / `pids.max`
+/ `cpu.max`) — but only where this process sits at the real cgroup-v2 root with the
+controllers delegated. Under systemd or in an ordinary container the controllers
+can't be enabled (cgroup v2's "no internal processes" rule), so a requested cap
+fails fast with `ErrResourceLimit` — never a silently-unbounded group. That
+fail-fast is the common path off bare metal.
 
 ### Whole-tree process control
 

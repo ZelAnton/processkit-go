@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but `program` / `args` / `cwd` / `stdout` / `stderr` are stored verbatim — the
   file is written `0600` on Unix (refusing to follow a symlink), inherits the
   directory ACL on Windows, and a "review before committing" note is documented.
+- Linux **cgroup v2** containment + limits backend. On Linux, processkit now prefers
+  a cgroup v2 subtree over a process group: children are placed atomically at clone
+  (`clone3` `CLONE_INTO_CGROUP`, kernel ≥ 5.7), teardown is the race-free
+  `cgroup.kill`, suspend/resume is `cgroup.freeze`, and `Group.Mechanism()` reports
+  `MechanismCgroupV2`. With the controllers delegated (the real cgroup-v2 root),
+  `WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota` are now *enforced* on Linux
+  (`memory.max` / `pids.max` / `cpu.max`). Where no cgroup can be made (no v2, no
+  delegation, a read-only fs, an old kernel) processkit transparently falls back to a
+  process group; where a cgroup exists but isn't the real root (systemd / a
+  container) a requested limit still fails fast with `ErrResourceLimit`, never a
+  silently-unbounded group.
 - Pre-freeze API polish: `Group.Processes() []*RunningProcess` (the live-handle
   companion to `Group.Members() []int`, so you can `WaitAll` over a group without
   retaining every `Start` handle); `Cmd.AppendEnv` / `CliClient.AppendEnv` (add to

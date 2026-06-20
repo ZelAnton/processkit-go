@@ -59,16 +59,19 @@ func TestGroup_Stats(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	// The Job Object backend reports CPU + peak memory; the process-group backend
-	// reports the count only.
+	// The Job Object (Windows) and cgroup v2 (Linux, where active) backends report
+	// CPU + peak memory; the process-group fallback reports the count only.
 	_, hasCPU := st.CPUTime()
 	_, hasMem := st.PeakMemoryBytes()
-	if runtime.GOOS == "windows" {
+	switch g.Mechanism() {
+	case MechanismJobObject, MechanismCgroupV2:
 		if !hasCPU || !hasMem {
-			t.Errorf("Windows group stats should have CPU+memory (hasCPU=%v hasMem=%v)", hasCPU, hasMem)
+			t.Errorf("%v backend should report CPU+memory (hasCPU=%v hasMem=%v)", g.Mechanism(), hasCPU, hasMem)
 		}
-	} else if hasCPU || hasMem {
-		t.Errorf("the process-group backend should report no CPU/memory (hasCPU=%v hasMem=%v)", hasCPU, hasMem)
+	case MechanismProcessGroup:
+		if hasCPU || hasMem {
+			t.Errorf("the process-group backend should report no CPU/memory (hasCPU=%v hasMem=%v)", hasCPU, hasMem)
+		}
 	}
 }
 

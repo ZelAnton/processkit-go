@@ -3,8 +3,11 @@ package processkit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +154,57 @@ func TestGroup_ConcurrentStartCloseStress(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// Start racing Close on ONE group must never orphan a grandchild: a child started
+// here is either torn down by the Close that snapshots it, or refused before it
+// spawns. Exercises the fd/drain window the cgroup backend has (run under -race and,
+// privileged, the cgroup backend).
+func TestGroup_StartRacingClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	dir := t.TempDir()
+	for iter := 0; iter < 15; iter++ {
+		g, err := NewGroup()
+		if err != nil {
+			t.Fatalf("NewGroup: %v", err)
+		}
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			pidfile := filepath.Join(dir, fmt.Sprintf("%d-%d.pid", iter, i))
+			go func() {
+				defer wg.Done()
+				_, _ = g.Start(context.Background(),
+					Command(selfExe(t)).WithEnv(helperEnv("groupchild", "PK_PIDFILE="+pidfile)...))
+			}()
+		}
+		time.Sleep(time.Duration(iter%3) * time.Millisecond) // vary the race window
+		_ = g.Close()
+		wg.Wait()
+		_ = g.Close() // idempotent
+	}
+
+	// Any grandchild that was actually spawned (wrote its pidfile) must be dead.
+	entries, _ := os.ReadDir(dir)
+	deadline := time.Now().Add(3 * time.Second)
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err != nil {
+			continue
+		}
+		for processAlive(pid) {
+			if time.Now().After(deadline) {
+				t.Fatalf("grandchild %d (from %s) still alive — orphan after Start-racing-Close", pid, e.Name())
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
 }
 
 // Guard the AppendEnv inherit path against an empty process env oddity.

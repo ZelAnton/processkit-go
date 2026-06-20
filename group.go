@@ -168,38 +168,38 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 	ecmd.Env = inv.Env
 	ecmd.WaitDelay = waitDelay
 
-	// Configure before opening any pipe, so a Configure failure (e.g. a future
-	// cgroup backend) can't strand a half-created pipe's file descriptors. Resource
-	// caps are applied once at NewGroup, not per child, so a Configure failure here
-	// is a containment failure (a StartError), never an unenforceable-limit one.
+	// Configure → Start → Assign → register, all under g.mu and serialized against
+	// Close. This is what makes the no-orphan guarantee race-free: a child started
+	// here is in the members snapshot any concurrent Close takes (so Close tears it
+	// down), or the Start observes g.closed first and never spawns. It also stops the
+	// cgroup backend's Configure (which reads a job fd that Close releases) from
+	// racing that release, and keeps the Unix pgid list from being killed between
+	// Assign and registration. The spawn happens under the lock — Starts serialize
+	// and a Close waits for an in-flight Start, the price of a race-free guarantee.
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return nil, &StartError{Program: inv.Program, Err: errGroupClosed}
+	}
+	// Configure before opening any pipe, so a Configure failure can't strand a
+	// half-created pipe's file descriptors. Caps are applied once at NewGroup, so a
+	// Configure failure here is a containment failure (a StartError), not a limit one.
 	if err := g.job.Configure(ecmd); err != nil {
+		g.mu.Unlock()
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
 	stdoutR, stderrR, err := scfg.preparePipes(ecmd)
 	if err != nil {
+		g.mu.Unlock()
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
 	if err := ecmd.Start(); err != nil {
+		g.mu.Unlock()
 		closePipes(stdoutR, stderrR)
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, &NotFoundError{Program: inv.Program, Searched: searchedPath(inv.Program)}
 		}
 		return nil, &StartError{Program: inv.Program, Err: err}
-	}
-
-	// Contain and register the child under g.mu, serialized against Close: either
-	// we Assign and record it before Close snapshots the members (so Close tears it
-	// down), or we observe g.closed and tear it down ourselves. Never an orphan,
-	// and never a drain/reap goroutine that outlives Close. Holding the lock across
-	// Assign is also what keeps the Unix pgid list from being killed between Assign
-	// and registration.
-	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
-		_ = ecmd.Process.Kill()
-		_ = ecmd.Wait()
-		closePipes(stdoutR, stderrR)
-		return nil, &StartError{Program: inv.Program, Err: errGroupClosed}
 	}
 	if err := g.job.Assign(ecmd); err != nil {
 		g.mu.Unlock()

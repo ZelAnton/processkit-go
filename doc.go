@@ -61,9 +61,10 @@
 // A group can also cap the whole tree's resources at creation: [NewGroup] takes
 // [WithMemoryMax], [WithMaxProcesses], and [WithCPUQuota] (a Group-only facility —
 // there is no per-run or per-[Pipe] cap; Start a command into a limited group to
-// bound it). A Windows Job Object enforces all three; a mechanism with no
-// whole-tree limit primitive (every Unix backend today — a Linux cgroup-v2 backend
-// is planned) makes [NewGroup] fail with a [*ResourceLimitError] (matching
+// bound it). A Windows Job Object and a Linux cgroup v2 subtree enforce all three;
+// but cgroup enforcement needs the process at the real cgroup-v2 root (not under
+// systemd or in a container), and macOS/BSD have no whole-tree cap, so where a cap
+// can't be enforced [NewGroup] fails with a [*ResourceLimitError] (matching
 // [ErrResourceLimit]) rather than hand back a silently-unbounded group. An
 // unenforced limit is no protection.
 //
