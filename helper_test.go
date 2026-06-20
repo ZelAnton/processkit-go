@@ -230,12 +230,13 @@ func helperEnv(mode string, extra ...string) []string {
 	return append(env, extra...)
 }
 
-// selfExe is the path to the test binary, used to re-exec helpers.
-func selfExe(t *testing.T) string {
-	t.Helper()
+// selfExe is the path to the test binary, used to re-exec helpers. It takes a
+// testing.TB so tests and benchmarks can both use it.
+func selfExe(tb testing.TB) string {
+	tb.Helper()
 	exe, err := os.Executable()
 	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
+		tb.Fatalf("os.Executable: %v", err)
 	}
 	return exe
 }
