@@ -52,6 +52,23 @@ func ExampleGroup() {
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
 }
 
+func ExamplePipe() {
+	ctx := context.Background()
+
+	// Shell-free `grep error log.txt | sort | uniq -c` — one kill-on-drop chain.
+	// The captured stdout is the last stage's; a failure is attributed to the
+	// first failing stage.
+	counts, err := processkit.Pipe(
+		processkit.Command("grep", "error", "log.txt"),
+		processkit.Command("sort"),
+		processkit.Command("uniq", "-c"),
+	).Run(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(counts)
+}
+
 func ExampleGroup_streaming() {
 	ctx := context.Background()
 

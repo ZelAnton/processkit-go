@@ -32,6 +32,16 @@
 // ([BufferLines] / [OnOverflow]), and an encoding [WithDecoder] all compose as
 // [StartOption]s on [Group.Start].
 //
+// To chain commands shell-free — a | b | c — use [Pipe]: each stage's stdout
+// feeds the next stage's stdin over a real OS pipe, and the whole chain runs in
+// one kill-on-drop container, so it lives and dies together. The verbs mirror
+// [Cmd] and return one [Result] folded by *pipefail attribution*: the captured
+// stdout is always the last stage's, while the program, stderr, and exit code are
+// the first failing (non-exempt) stage's — preferring a real culprit over an
+// upstream stage killed by SIGPIPE. A stage marked [Cmd.WithUncheckedInPipe] is
+// exempt from blame (the `producer | head` pattern). [Pipeline.WithTimeout] bounds
+// the whole chain.
+//
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.
 //

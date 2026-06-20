@@ -24,6 +24,8 @@ type Cmd struct {
 	okCodes []int
 	timeout time.Duration
 	runner  ProcessRunner
+
+	uncheckedInPipe bool // exempt from a Pipeline's pipefail attribution
 }
 
 // Command starts building a command that runs program with args. Finish with a
@@ -99,6 +101,19 @@ func (c *Cmd) WithOkCodes(codes ...int) *Cmd {
 func (c *Cmd) WithRunner(r ProcessRunner) *Cmd {
 	cp := c.clone()
 	cp.runner = r
+	return cp
+}
+
+// WithUncheckedInPipe returns a copy of the command exempt from a [Pipeline]'s
+// pipefail attribution: as a pipeline stage, its failure never blames the chain —
+// a non-zero exit always, and for a non-final stage a signal (including the
+// SIGPIPE it gets when a downstream stage stops reading) or its own per-stage
+// timeout too. This is the tool for the `producer | head` pattern. A final stage
+// is only forgiven its non-zero exit; a timeout or signal kill still surfaces.
+// Outside a pipeline it has no effect.
+func (c *Cmd) WithUncheckedInPipe() *Cmd {
+	cp := c.clone()
+	cp.uncheckedInPipe = true
 	return cp
 }
 

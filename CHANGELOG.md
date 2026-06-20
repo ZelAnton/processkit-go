@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `OverflowDropNewest`), with `RunningProcess.DroppedLines`.
   - `WithDecoder` (non-UTF-8 console output; no new dependency) and
     `WithMaxLineBytes` (bounded memory on newline-free streams).
+- Pipelines — shell-free `a | b | c` via `Pipe(stages ...*Cmd) *Pipeline`:
+  - Stages wired stdout→stdin over real OS pipes; the whole chain runs in one
+    shared kill-on-drop container and dies together.
+  - Verbs mirror a command (`Output` / `Run` / `ExitCode` / `Probe`), returning a
+    single `Result` folded by **pipefail attribution** (leftmost failing stage
+    wins program/stderr/exit code; stdout is always the last stage's; a SIGPIPE
+    victim is de-prioritised behind a real culprit).
+  - `Pipeline.WithStdin` feeds the first stage; `Pipeline.WithTimeout` bounds the
+    whole chain (kills all stages, keeps no partial output); per-stage
+    `Cmd.WithTimeout` is honoured and attributed to that stage.
+  - `Cmd.WithUncheckedInPipe` exempts a stage from attribution (the
+    `producer | head` pattern).
 
 ### Changed
 -

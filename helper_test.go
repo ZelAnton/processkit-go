@@ -3,6 +3,7 @@ package processkit
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -91,6 +92,35 @@ func TestMain(m *testing.M) {
 		sc := bufio.NewScanner(os.Stdin)
 		for sc.Scan() {
 			fmt.Fprintf(os.Stdout, "echo: %s\n", sc.Text())
+		}
+		os.Exit(0)
+	case "upper":
+		// Read all of stdin, upper-case ASCII, write to stdout. A pipeline transform.
+		b, _ := io.ReadAll(os.Stdin)
+		for i := range b {
+			if c := b[i]; c >= 'a' && c <= 'z' {
+				b[i] = c - 32
+			}
+		}
+		_, _ = os.Stdout.Write(b)
+		os.Exit(0)
+	case "drainexit":
+		// Drain stdin, emit fixed stdout/stderr, exit with PK_CODE. A pipeline stage
+		// whose exit code drives pipefail attribution.
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		if s, ok := os.LookupEnv("PK_STDOUT"); ok {
+			fmt.Fprint(os.Stdout, s)
+		}
+		if s, ok := os.LookupEnv("PK_STDERR"); ok {
+			fmt.Fprint(os.Stderr, s)
+		}
+		os.Exit(envInt("PK_CODE", 0))
+	case "headone":
+		// Print the first line of stdin, then exit — leaving the rest unread, so an
+		// upstream producer is killed by SIGPIPE (Unix) or a broken pipe (Windows).
+		sc := bufio.NewScanner(os.Stdin)
+		if sc.Scan() {
+			fmt.Println(sc.Text())
 		}
 		os.Exit(0)
 	case "termexit":

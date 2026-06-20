@@ -109,6 +109,28 @@ The pieces compose — mix and match per start:
   a `golang.org/x/text/encoding` reader for non-UTF-8 console output (no extra
   dependency is pulled into this module).
 
+### Pipelines
+
+Chain commands shell-free with `Pipe` — each stage's stdout feeds the next stage's
+stdin over a real OS pipe, and the whole chain runs in one kill-on-drop container:
+
+```go
+// grep error log.txt | sort | uniq -c
+counts, err := processkit.Pipe(
+	processkit.Command("grep", "error", "log.txt"),
+	processkit.Command("sort"),
+	processkit.Command("uniq", "-c"),
+).Run(ctx)
+```
+
+The verbs mirror a single command (`Output` / `Run` / `ExitCode` / `Probe`) and
+return one `Result` folded by **pipefail attribution**: the captured stdout is
+always the last stage's, while the program, stderr, and exit code are the **first
+failing** stage's. Feed the head of the chain with `.WithStdin(r)` and bound the
+whole chain with `.WithTimeout(d)`. For the `producer | head` pattern — where the
+producer is killed by `SIGPIPE` once the consumer stops reading — mark the
+producer `.WithUncheckedInPipe()` so it doesn't fail the chain.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.
