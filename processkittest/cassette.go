@@ -27,14 +27,18 @@ const maxCassetteBytes = 64 << 20
 // *recording*, and replay never spawns a subprocess to fall back on.
 var ErrCassetteMiss = errors.New("processkittest: no cassette entry matches the command")
 
-// CassetteMissError reports that a replayed command matched no recorded entry.
+// CassetteMissError reports that a replayed command matched no recorded entry. It
+// carries the full match key (program + args + dir) so a miss is debuggable.
 // Matches errors.Is(err, [ErrCassetteMiss]).
 type CassetteMissError struct {
-	Program string // the program that was looked up
+	Program string   // the program that was looked up
+	Args    []string // its arguments (part of the match key)
+	Dir     string   // its working directory (part of the match key)
 }
 
 func (e *CassetteMissError) Error() string {
-	return fmt.Sprintf("processkittest: no cassette entry for %q (record one, or check args/dir)", e.Program)
+	return fmt.Sprintf("processkittest: no cassette entry for %q (args %v, dir %q) — record one, or check program/args/dir",
+		e.Program, e.Args, e.Dir)
 }
 
 // Is matches the ErrCassetteMiss sentinel.
@@ -97,6 +101,13 @@ const (
 // A cassette is a human-diffable text fixture: stdout/stderr are stored as UTF-8
 // text, so binary (non-UTF-8) output is captured lossily and does not round-trip
 // byte-for-byte. CLI tools emit text, which is unaffected.
+//
+// Only runs that complete with a [processkit.Result] are recorded: a spawn failure,
+// a not-found program, or a cancellation errors before there is a result to
+// capture, so it records nothing (a non-zero exit, signal, or timeout IS a result
+// and is recorded). Replay is not timing-faithful — a replayed
+// [processkit.Result.Duration] is zero — and, being a custom runner, it emits no
+// lifecycle logs (see [processkit.Cmd.WithLogger]).
 //
 // It is safe for concurrent use. Only the Output verb is supported (the seam the
 // capture verbs run through).
@@ -203,7 +214,7 @@ func (r *RecordReplayRunner) replay(inv processkit.Invocation) (*processkit.Resu
 	s := r.slots[keyOf(inv.Program, inv.Args, inv.Dir)]
 	if s == nil {
 		r.mu.Unlock()
-		return nil, &CassetteMissError{Program: inv.Program}
+		return nil, &CassetteMissError{Program: inv.Program, Args: append([]string(nil), inv.Args...), Dir: inv.Dir}
 	}
 	e := s.play()
 	r.mu.Unlock()

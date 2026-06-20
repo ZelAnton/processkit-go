@@ -3,6 +3,7 @@ package processkittest_test
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -50,7 +51,9 @@ func ExampleRecordReplayRunner() {
 		On([]string{"git", "--version"}, processkittest.OK("git version 2.43.0"))
 	rec := processkittest.Record(path, inner)
 	_, _ = processkit.Command("git", "--version").WithRunner(rec).Output(context.Background())
-	_ = rec.Save()
+	if err := rec.Save(); err != nil { // a failed Save means no cassette — don't ignore it
+		log.Fatal(err)
+	}
 
 	// Replay — no runner of your own, identical result, no subprocess.
 	rep, _ := processkittest.Replay(path)

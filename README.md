@@ -335,7 +335,10 @@ out2, _ := processkit.Command("git", "--version").WithRunner(rep).Output(ctx)
 
 A run is matched on program + args + working directory (environment is excluded, so
 an irrelevant env difference can't cause a miss). A command recorded twice replays
-in capture order, then repeats the last.
+in capture order, then repeats the last. Only runs that complete with a `Result` are
+recorded — a spawn failure, not-found, or cancellation records nothing (a non-zero
+exit, signal, or timeout *is* a result and is recorded). Replay is instant, not
+timing-faithful (`Duration()` is zero).
 
 **Secrets:** a cassette redacts environment **values** (it stores variable *names*
 only), but **`program`, `args`, `cwd`, `stdout`, and `stderr` are stored verbatim**

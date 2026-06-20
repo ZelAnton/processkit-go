@@ -306,6 +306,44 @@ func TestCassette_LoadErrors(t *testing.T) {
 	}
 }
 
+// A recorded fail→fail→succeed sequence replays in capture order, so a WithRetry
+// run converges identically on replay as it did on record (the load-bearing
+// record/replay × retry integration, mirroring the scripted-runner sequence).
+func TestCassette_DrivesRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cas.json")
+	ctx := context.Background()
+	inner := &seqInner{results: []*processkit.Result{
+		result(processkit.Exited(1), "", "try 1"),
+		result(processkit.Exited(1), "", "try 2"),
+		result(processkit.Exited(0), "done", ""),
+	}}
+	rec := Record(path, inner)
+	// Record three runs of the same command (as a retry loop would issue).
+	cmd := processkit.Command("flaky").WithRunner(rec)
+	for i := 0; i < 3; i++ {
+		_, _ = cmd.Output(ctx)
+	}
+	if err := rec.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	rep, err := Replay(path)
+	if err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	// Replay through a retry policy: it should fail twice then succeed.
+	out, err := processkit.Command("flaky").
+		WithRunner(rep).
+		WithRetry(3, 0, func(error) bool { return true }).
+		Run(ctx)
+	if err != nil {
+		t.Fatalf("retry over the cassette should converge: %v", err)
+	}
+	if out != "done" {
+		t.Errorf("Run = %q, want %q", out, "done")
+	}
+}
+
 func TestCassette_MissingFileIsNotExist(t *testing.T) {
 	_, err := Replay(filepath.Join(t.TempDir(), "nope.json"))
 	if !os.IsNotExist(err) {
