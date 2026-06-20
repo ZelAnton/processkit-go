@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -122,6 +123,35 @@ func TestMain(m *testing.M) {
 		if sc.Scan() {
 			fmt.Println(sc.Text())
 		}
+		os.Exit(0)
+	case "readyline":
+		// Announce readiness on stdout (PK_READY, default "server ready"), then
+		// linger. Drives WaitForLine.
+		msg := os.Getenv("PK_READY")
+		if msg == "" {
+			msg = "server ready"
+		}
+		fmt.Println(msg)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "listen":
+		// Bind an ephemeral TCP port, announce it as "PORT=host:port", accept
+		// connections, then linger. Drives WaitForPort.
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			os.Exit(91)
+		}
+		fmt.Printf("PORT=%s\n", ln.Addr().String())
+		go func() {
+			for {
+				c, e := ln.Accept()
+				if e != nil {
+					return
+				}
+				_ = c.Close()
+			}
+		}()
+		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	case "termexit":
 		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.

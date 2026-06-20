@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -147,6 +148,37 @@ func (e *StartError) Error() string {
 
 // Unwrap exposes the underlying OS error to errors.Is / errors.As.
 func (e *StartError) Unwrap() error { return e.Err }
+
+// NotReadyError reports that a readiness probe ([RunningProcess.WaitForLine],
+// [RunningProcess.WaitForPort], [RunningProcess.WaitFor]) did not pass — the line
+// never appeared, the port never accepted, the predicate never held, or the
+// process exited before becoming ready. Matches errors.Is(err, [ErrNotReady]).
+//
+// It is distinct from [ErrTimeout]: a probe deadline is the caller's own
+// readiness budget, not the run's [Cmd.WithTimeout], and a failed probe does NOT
+// kill the process — the caller decides what happens next.
+type NotReadyError struct {
+	Program string        // the process that did not become ready
+	Probe   string        // which probe: "line", "port", or "predicate"
+	Timeout time.Duration // the probe deadline that elapsed
+	Cause   error         // the last underlying failure (e.g. the last dial error), if any
+}
+
+// Error renders the readiness failure.
+func (e *NotReadyError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("processkit: %s not ready (%s probe) after %s: %v",
+			quoteProgram(e.Program), e.Probe, e.Timeout, e.Cause)
+	}
+	return fmt.Sprintf("processkit: %s not ready (%s probe) after %s",
+		quoteProgram(e.Program), e.Probe, e.Timeout)
+}
+
+// Is matches the ErrNotReady sentinel.
+func (e *NotReadyError) Is(target error) bool { return target == ErrNotReady }
+
+// Unwrap exposes the last underlying failure (if any) to errors.Is / errors.As.
+func (e *NotReadyError) Unwrap() error { return e.Cause }
 
 // --- safe rendering helpers (shared by the error types) ---
 

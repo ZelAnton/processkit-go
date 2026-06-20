@@ -131,6 +131,29 @@ whole chain with `.WithTimeout(d)`. For the `producer | head` pattern — where 
 producer is killed by `SIGPIPE` once the consumer stops reading — mark the
 producer `.WithUncheckedInPipe()` so it doesn't fail the chain.
 
+### Readiness probes
+
+A group-started process can be probed for readiness — and a probe **never kills**
+the process, so if it isn't ready you decide what to do:
+
+```go
+server, _ := group.Start(ctx, processkit.Command("my-server"), processkit.StreamLines())
+
+// Any one of:
+line, err := server.WaitForLine(ctx, func(s string) bool {     // a log line appears
+	return strings.Contains(s, "listening")
+}, 10*time.Second)
+err = server.WaitForPort(ctx, "127.0.0.1:8080", 10*time.Second) // a TCP port accepts
+err = server.WaitFor(ctx, func(ctx context.Context) bool {      // a custom check passes
+	return healthCheck(ctx) == nil
+}, 10*time.Second)
+```
+
+On the deadline (or if the process exits first) a probe returns a `*NotReadyError`
+(`errors.Is(err, processkit.ErrNotReady)`) — **distinct from `ErrTimeout`**, which
+is the run's own deadline that *does* tear the tree down. `WaitForLine` watches the
+merged stdout/stderr stream, so the process must be started with `StreamLines()`.
+
 ### Supervision
 
 Keep a command alive with `Supervise` — it re-runs the command on a crash with

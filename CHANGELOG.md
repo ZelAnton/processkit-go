@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Readiness probes on `RunningProcess` — `WaitForLine` (a matching output line,
+  returned), `WaitForPort` (a TCP address accepts), and `WaitFor` (a custom
+  predicate). Each takes a `context.Context` and a `within` deadline. A probe
+  never kills the process: on the deadline, or if the process exits first, it
+  returns a `*NotReadyError` (matching `ErrNotReady`, carrying the probe kind and
+  last failure) — distinct from `ErrTimeout`. `WaitForLine` requires `StreamLines`.
 
 ### Changed
 -

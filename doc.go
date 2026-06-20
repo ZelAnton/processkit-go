@@ -42,6 +42,13 @@
 // exempt from blame (the `producer | head` pattern). [Pipeline.WithTimeout] bounds
 // the whole chain.
 //
+// A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
+// waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
+// TCP address to accept connections, and [RunningProcess.WaitFor] polls a custom
+// predicate. A probe never kills the process: if it isn't ready by the deadline you
+// get a [*NotReadyError] (matching [ErrNotReady], distinct from [ErrTimeout]) and
+// decide what to do next.
+//
 // To keep a command alive, wrap it in a [Supervisor]: it re-runs the command on
 // a crash with capped-exponential backoff (plus jitter, and an optional
 // failure-storm guard) until a stop condition is met — a clean run, a

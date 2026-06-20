@@ -52,6 +52,26 @@ func ExampleGroup() {
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
 }
 
+func ExampleRunningProcess_WaitForPort() {
+	ctx := context.Background()
+	group, err := processkit.NewGroup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close()
+
+	server, err := group.Start(ctx, processkit.Command("my-server"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Wait for the server to accept connections. A probe never kills the process —
+	// if it isn't ready in time you get a *NotReadyError and decide what to do.
+	if err := server.WaitForPort(ctx, "127.0.0.1:8080", 10*time.Second); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("server is accepting connections")
+}
+
 func ExampleSupervisor() {
 	ctx := context.Background()
 
