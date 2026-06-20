@@ -181,6 +181,18 @@ func TestMain(m *testing.M) {
 			}
 			time.Sleep(delay)
 		}
+	case "burncpu":
+		// Busy-loop for PK_BURN_MS to accumulate CPU time, then exit — drives the
+		// profile/stats tests (the process actually consumes measurable CPU).
+		deadline := time.Now().Add(time.Duration(envInt("PK_BURN_MS", 200)) * time.Millisecond)
+		x := 0
+		for time.Now().Before(deadline) {
+			for i := 0; i < 1_000_000; i++ {
+				x += i
+			}
+		}
+		_ = x
+		os.Exit(0)
 	case "termexit":
 		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.
 		os.Exit(44)

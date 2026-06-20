@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -182,6 +183,61 @@ func (j *winJob) Close() error {
 }
 
 func (j *winJob) Mechanism() Mechanism { return JobObject }
+
+// jobBasicAccountingInfo mirrors JOBOBJECT_BASIC_ACCOUNTING_INFORMATION. The times
+// are in 100-ns units and are cumulative over every process that was ever in the
+// job, including terminated ones.
+type jobBasicAccountingInfo struct {
+	TotalUserTime             int64
+	TotalKernelTime           int64
+	ThisPeriodTotalUserTime   int64
+	ThisPeriodTotalKernelTime int64
+	TotalPageFaultCount       uint32
+	TotalProcesses            uint32
+	ActiveProcesses           uint32
+	TotalTerminatedProcesses  uint32
+}
+
+// Stats reads the Job Object's resource accounting: the live process count, the
+// cumulative user+kernel CPU time, and the peak committed memory.
+func (j *winJob) Stats() (Stats, error) {
+	j.mu.Lock()
+	h := j.handle
+	j.mu.Unlock()
+	if h == windows.InvalidHandle || h == 0 {
+		return Stats{}, nil
+	}
+
+	var acct jobBasicAccountingInfo
+	if err := windows.QueryInformationJobObject(h, windows.JobObjectBasicAccountingInformation,
+		uintptr(unsafe.Pointer(&acct)), uint32(unsafe.Sizeof(acct)), nil); err != nil {
+		return Stats{}, fmt.Errorf("QueryInformationJobObject(accounting): %w", err)
+	}
+	s := Stats{
+		ActiveProcesses: int(acct.ActiveProcesses),
+		CPUTime:         add100ns(acct.TotalUserTime, acct.TotalKernelTime),
+		HasCPU:          true,
+	}
+
+	// Peak committed memory is in the extended-limit info; a failure here just
+	// leaves memory unavailable (the CPU + count above still stand).
+	var ext windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if err := windows.QueryInformationJobObject(h, jobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&ext)), uint32(unsafe.Sizeof(ext)), nil); err == nil {
+		s.PeakMemoryBytes = uint64(ext.PeakJobMemoryUsed)
+		s.HasMem = true
+	}
+	return s, nil
+}
+
+// add100ns sums two 100-ns counters and returns the duration, clamping on overflow.
+func add100ns(user, kernel int64) time.Duration {
+	sum := user + kernel
+	if user < 0 || kernel < 0 || sum < 0 { // negative or wrapped
+		return time.Duration(1<<63 - 1)
+	}
+	return nanosFromUnit(sum, 100)
+}
 
 var (
 	ntdll               = windows.NewLazySystemDLL("ntdll.dll")

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // RunningProcess is a live handle to a process started in a [Group]. Wait for it
@@ -15,6 +16,7 @@ type RunningProcess struct {
 	cmd       *exec.Cmd
 	program   string
 	mechanism Mechanism
+	startTime time.Time // when the process was started, for Elapsed / Profile duration
 
 	done    chan struct{} // closed when the process has been reaped
 	outcome Outcome

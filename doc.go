@@ -49,6 +49,12 @@
 // into the group's containment. Operations a platform can't honour return
 // [ErrUnsupported] explicitly — never a silent no-op.
 //
+// Resource usage is available too: [Group.Stats] (and the [Group.SampleStats]
+// channel) report a whole-tree snapshot — live process count, and, on the Job
+// Object backend, cumulative CPU and peak memory; [RunningProcess.Profile] samples
+// one run over its lifetime into a [RunProfile]. Metrics a platform can't read are
+// reported as unavailable (an ok bool), never an error.
+//
 // A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
 // waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
 // TCP address to accept connections, and [RunningProcess.WaitFor] polls a custom

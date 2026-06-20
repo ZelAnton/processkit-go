@@ -153,6 +153,25 @@ context is terminal (never retried). It applies to the success-requiring verbs
 `IsTransient` helper is a ready-made classifier. This is **replay-to-success**;
 to keep a long-running process *alive* across crashes, use `Supervise` instead.
 
+### Resource metrics
+
+Read whole-tree resource usage from a `Group`, or profile one run:
+
+```go
+st, _ := group.Stats()                          // a snapshot
+fmt.Println(st.ActiveProcesses())               // live process count
+if cpu, ok := st.CPUTime(); ok { … }            // cumulative CPU (Job Object backend)
+
+prof, _ := proc.Profile(ctx, 50*time.Millisecond) // sample one run to exit
+fmt.Println(prof.Duration(), prof.PeakMemoryBytes(), prof.AvgCPU())
+```
+
+`Group.SampleStats(ctx, every)` returns a channel of snapshots. A metric a platform
+can't read is reported as unavailable (the `ok` bool), never an error — and the
+backends differ: the **Job Object** (Windows) reports count + CPU + peak memory;
+the **process group** (Unix, no cgroup yet) reports the count only. Per-process
+`RunningProcess.CPUTime` / `PeakMemoryBytes` work on Linux and Windows, not macOS.
+
 ### Whole-tree process control
 
 A `Group` can signal, pause, and adopt processes as a unit:

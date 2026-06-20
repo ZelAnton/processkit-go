@@ -115,3 +115,27 @@ func (j *pgroupJob) Kill() error { return j.Signal(int(syscall.SIGKILL)) }
 func (j *pgroupJob) Close() error { return nil }
 
 func (j *pgroupJob) Mechanism() Mechanism { return ProcessGroup }
+
+// Stats reports the live member count only — a process group has no kernel
+// resource accumulator, so CPU and memory are unavailable without a cgroup. It
+// counts process groups (a contained child that forks helpers counts once) plus
+// solo-adopted pids that are still signallable.
+func (j *pgroupJob) Stats() (Stats, error) {
+	j.mu.Lock()
+	pgids := append([]int(nil), j.pgids...)
+	solo := append([]int(nil), j.solo...)
+	j.mu.Unlock()
+
+	n := 0
+	for _, pgid := range pgids {
+		if syscall.Kill(-pgid, 0) == nil { // a signal-0 probe: the group is still alive
+			n++
+		}
+	}
+	for _, pid := range solo {
+		if syscall.Kill(pid, 0) == nil {
+			n++
+		}
+	}
+	return Stats{ActiveProcesses: n}, nil
+}

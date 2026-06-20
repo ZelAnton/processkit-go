@@ -82,6 +82,25 @@ func ExampleCmd_WithRetry() {
 	fmt.Println(out)
 }
 
+func ExampleGroup_Stats() {
+	ctx := context.Background()
+	group, err := processkit.NewGroup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close()
+	_, _ = group.Start(ctx, processkit.Command("my-worker"))
+
+	st, err := group.Stats()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%d live processes\n", st.ActiveProcesses())
+	if cpu, ok := st.CPUTime(); ok { // available on Windows; count-only on POSIX groups
+		fmt.Printf("CPU: %s\n", cpu)
+	}
+}
+
 func ExampleGroup_Signal() {
 	ctx := context.Background()
 	group, err := processkit.NewGroup()

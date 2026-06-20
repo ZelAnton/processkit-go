@@ -8,8 +8,30 @@ package sys
 
 import (
 	"errors"
+	"math"
 	"os/exec"
+	"time"
 )
+
+// Stats is a whole-job resource snapshot. CPU time and peak memory are optional —
+// the Has flags say whether the backend could read them (the process-group backend
+// can't, so it reports only the count).
+type Stats struct {
+	ActiveProcesses int
+	CPUTime         time.Duration
+	HasCPU          bool
+	PeakMemoryBytes uint64
+	HasMem          bool
+}
+
+// ProcMetrics is a single process's resource usage. Each metric is independently
+// optional (Has flag), so a partial read still returns what it got.
+type ProcMetrics struct {
+	CPUTime    time.Duration
+	HasCPU     bool
+	PeakMemory uint64
+	HasMem     bool
+}
 
 // Mechanism reports which OS primitive a Job uses (mapped to the public
 // processkit.Mechanism by the caller, which can't import this internal package).
@@ -66,7 +88,37 @@ type Job interface {
 	Close() error
 	// Mechanism reports the containment actually in effect.
 	Mechanism() Mechanism
+	// Stats reports a whole-tree resource snapshot. The Job Object backend reports
+	// CPU + peak memory + an exact count; the process-group backend reports only the
+	// count (CPU/memory unavailable without a cgroup).
+	Stats() (Stats, error)
 }
 
 // NewJob creates a fresh, empty job for the current platform.
 func NewJob() (Job, error) { return newJob() }
+
+// ProcessMetrics reads one process's resource usage by pid. It never errors: a
+// metric it can't read (process gone, permission, unsupported platform) is simply
+// reported as unavailable (its Has flag false).
+func ProcessMetrics(pid int) ProcMetrics { return processMetrics(pid) }
+
+// saturatingMulU64 multiplies, clamping to MaxUint64 instead of overflowing.
+func saturatingMulU64(a, b uint64) uint64 {
+	if a != 0 && b > math.MaxUint64/a {
+		return math.MaxUint64
+	}
+	return a * b
+}
+
+// nanosFromUnit converts count*unit nanoseconds, clamping to MaxInt64. count must
+// be non-negative; unit is the per-count nanoseconds (e.g. 100 for a FILETIME
+// 100-ns tick).
+func nanosFromUnit(count, unit int64) time.Duration {
+	if unit <= 0 {
+		return 0 // invalid unit; no sensible conversion (defensive — never reached)
+	}
+	if count < 0 || count > math.MaxInt64/unit {
+		return time.Duration(math.MaxInt64) // overflow / wrapped counter → saturate
+	}
+	return time.Duration(count * unit)
+}

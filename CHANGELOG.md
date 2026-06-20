@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Resource metrics: `Group.Stats() (GroupStats, error)` (a whole-tree snapshot —
+  `ActiveProcesses` always, plus `CPUTime` / `PeakMemoryBytes` on the Job Object
+  backend), `Group.SampleStats(ctx, every)` (a channel of snapshots),
+  `RunningProcess.CPUTime` / `PeakMemoryBytes` / `Elapsed`, and
+  `RunningProcess.Profile(ctx, every) (RunProfile, error)` (samples one run to exit:
+  duration, exit code, CPU, peak memory, sample count, `AvgCPU`). Optional metrics
+  use an `ok` bool — a metric a platform can't read is never an error. Per-process
+  metrics work on Linux (`/proc`) and Windows; the POSIX process-group backend
+  reports only the count (no kernel accumulator without a cgroup).
 - Whole-tree process control on `Group`: `Signal(Signal)`, `Suspend` / `Resume`,
   and `Adopt(*os.Process)`. A portable `Signal` type (`SignalTerm` / `SignalKill` /
   `SignalInt` / `SignalHup` / `SignalQuit` / `SignalUsr1` / `SignalUsr2` +

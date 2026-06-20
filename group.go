@@ -134,6 +134,7 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 		cmd:       ecmd,
 		program:   inv.Program,
 		mechanism: g.mechanism,
+		startTime: time.Now(),
 		done:      make(chan struct{}),
 		stop:      make(chan struct{}),
 	}
