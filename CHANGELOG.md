@@ -65,6 +65,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- `CliClient` — a reusable core for typed wrappers around one CLI tool:
+  `NewClient(program)` with copy-on-write `WithRunner` / `WithTimeout` / `WithEnv` /
+  `WithDir` / `WithOkCodes` defaults, `Command(args...)` to build a sub-command, and
+  `Run` / `Output` / `ExitCode` / `Probe(ctx, args...)` shortcuts. Mockable by
+  construction (inject a fake runner).
+- `processkittest` package — hermetic test doubles on the `ProcessRunner` seam:
+  `ScriptedRunner` (canned `Reply`s via `On` / `OnSequence` / `When` / `Fallback`;
+  unmatched commands fail loudly) and `RecordingRunner` (records invocations for
+  `Calls` / `OnlyCall` assertions). `Reply` constructors: `OK` / `Fail` / `TimedOut`
+  / `Signalled` / `Err` / `Pending` (+ `WithStdout` / `WithStderr`).
+- Public `Result` / `Outcome` construction seam for custom runners and fakes:
+  `NewResult(inv, outcome, stdout, stderr)` plus `Exited` / `Signalled` / `TimedOut`
+  outcome constructors.
 - Retry — `Cmd.WithRetry(maxAttempts, backoff, retryIf)` replays a failed run to
   success: it runs at most `maxAttempts` times total, sleeps a constant `backoff`
   between tries, and retries only while `retryIf func(error) bool` classifies the

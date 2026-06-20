@@ -199,6 +199,44 @@ failure-storm guard with `WithStormPause(d)` so a tight crash loop pauses instea
 of hammering. Supervision is sequential — the whole process tree is reaped before
 each restart — and a cancelled context ends it promptly.
 
+### Typed CLI wrappers & test doubles
+
+To wrap one CLI tool (git, gh, jj, …), build a `CliClient` — it injects the
+program, defaults, and runner once, so your wrapper is just argument-building and
+output-parsing, and is **mockable by construction**:
+
+```go
+type Git struct{ client *processkit.CliClient }
+
+func NewGit() *Git {
+	// WithEnv replaces the environment, so to add a var keep the rest:
+	// .WithEnv(append(os.Environ(), "GIT_TERMINAL_PROMPT=0")...)
+	return &Git{client: processkit.NewClient("git")}
+}
+func (g *Git) CurrentBranch(ctx context.Context) (string, error) {
+	return g.client.Run(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+}
+```
+
+The `processkittest` package gives you ready-made fakes for the `ProcessRunner`
+seam — no real subprocess in your tests:
+
+```go
+import "github.com/ZelAnton/processkit-go/processkittest"
+
+scripted := processkittest.NewScriptedRunner().
+	On([]string{"git", "rev-parse", "--abbrev-ref", "HEAD"}, processkittest.OK("main")).
+	Fallback(processkittest.Fail(1, "unexpected command"))
+git := &Git{client: processkit.NewClient("git").WithRunner(scripted)}
+// git.CurrentBranch(ctx) now returns "main" with no `git` on the machine.
+```
+
+`ScriptedRunner` answers commands with canned `Reply`s (`OK` / `Fail` / `TimedOut`
+/ `Signalled` / `Err` / `Pending`), and an unexpected command fails loudly.
+`RecordingRunner` records the invocations a wrapper builds so you can assert on
+them (`rec.OnlyCall().Args`). Writing your own runner? Build its results with
+`processkit.NewResult`.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

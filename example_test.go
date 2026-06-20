@@ -53,6 +53,20 @@ func ExampleGroup() {
 	_ = group.Shutdown(ctx, processkit.ShutdownGrace(5*time.Second))
 }
 
+func ExampleCliClient() {
+	ctx := context.Background()
+	// A reusable core for a typed git wrapper: program + defaults injected once.
+	// (Pass append(os.Environ(), "GIT_TERMINAL_PROMPT=0")... to WithEnv to add a
+	// var without dropping the inherited environment.)
+	git := processkit.NewClient("git").WithTimeout(10 * time.Second)
+
+	branch, err := git.Run(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(branch)
+}
+
 func ExampleCmd_WithRetry() {
 	ctx := context.Background()
 	// Retry a flaky fetch up to 5 times, 1s apart, but only when it times out.

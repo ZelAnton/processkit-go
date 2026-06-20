@@ -44,6 +44,19 @@ func signalled(sig *int) Outcome {
 // timedOut builds an Outcome for a run killed by its own deadline.
 func timedOut() Outcome { return Outcome{kind: outcomeTimedOut} }
 
+// Exited builds an [Outcome] for a normal termination with the given exit code.
+// It is a construction seam for fake [ProcessRunner]s (see [NewResult]); real
+// runs produce outcomes themselves.
+func Exited(code int) Outcome { return exited(code) }
+
+// Signalled builds an [Outcome] for a Unix signal kill with the given signal
+// number — for fakes modelling a signal kill. (A real Windows kill is reported as
+// exited, never signalled.)
+func Signalled(signal int) Outcome { return signalled(&signal) }
+
+// TimedOut builds an [Outcome] for a run killed by its own deadline — for fakes.
+func TimedOut() Outcome { return timedOut() }
+
 // Code returns the exit code and true for a normal exit; (0, false) for a signal
 // kill or a timeout.
 func (o Outcome) Code() (int, bool) {
@@ -95,6 +108,25 @@ type Result struct {
 	duration  time.Duration
 	okCodes   []int // exit codes treated as success in addition to 0
 	mechanism Mechanism
+}
+
+// NewResult builds a [Result] for a fake [ProcessRunner] to return from its Output
+// method — the construction seam the dependency-injection model needs (a real run
+// produces a Result through the verbs; a double or a custom runner builds one
+// here). The program, args, and ok-codes are taken from inv; stdout is stored as
+// produced and stderr is normalized to \n. The mechanism is [MechanismUnknown] and
+// the duration is zero (set neither for a fake). Build the outcome with [Exited],
+// [Signalled], or [TimedOut].
+func NewResult(inv Invocation, outcome Outcome, stdout, stderr []byte) *Result {
+	return &Result{
+		program:   inv.Program,
+		args:      append([]string(nil), inv.Args...),
+		outcome:   outcome,
+		stdout:    append([]byte(nil), stdout...),
+		stderr:    normalizeNewlines(stderr),
+		okCodes:   append([]int(nil), inv.OkCodes...),
+		mechanism: MechanismUnknown,
+	}
 }
 
 // Program returns the program that was run.
