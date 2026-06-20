@@ -99,9 +99,10 @@
 // To build a reusable typed wrapper around one CLI tool (git, gh, …), use a
 // [CliClient]: it injects the program, defaults, and runner once, so the wrapper is
 // just argument-building and output-parsing — and is mockable by construction. The
-// processkittest package provides ready-made fakes for the seam (a scripted runner
-// and a recording runner); a hand-written custom runner builds its [Result]s with
-// [NewResult].
+// processkittest package provides ready-made fakes for the seam (a scripted runner,
+// a recording runner, and a record/replay runner that captures real runs to a JSON
+// cassette and replays them hermetically); a hand-written custom runner builds its
+// [Result]s with [NewResult].
 //
 // Context cancellation is reported two ways, by design: every verb that owns the
 // run — the [Cmd], [Pipeline], and [Supervisor] verbs — wraps it in a

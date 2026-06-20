@@ -1,8 +1,10 @@
 // Package processkittest provides hermetic test doubles for the processkit
 // [processkit.ProcessRunner] seam: a [ScriptedRunner] that answers commands with
-// canned replies, and a [RecordingRunner] that records the invocations a wrapper
-// makes for assertions. They are hand-written, idiomatic Go dependency injection —
-// no mock framework — and need no real subprocess.
+// canned replies, a [RecordingRunner] that records the invocations a wrapper makes
+// for assertions, and a [RecordReplayRunner] that records real runs to a JSON
+// cassette and replays them. They are hand-written, idiomatic Go dependency
+// injection — no mock framework — and (except a recorder's first pass) need no real
+// subprocess.
 //
 // Inject one into a command, a [processkit.CliClient], or a typed wrapper built on
 // a client:

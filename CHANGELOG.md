@@ -65,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Record/replay: `processkittest.RecordReplayRunner` captures real
+  `Invocation → Result` pairs to a human-diffable JSON cassette (`Record(path,
+  inner)` + `Save()`) and replays them hermetically (`Replay(path)`), over the same
+  `ProcessRunner` seam. Matching is on program + args + working directory
+  (environment excluded); a command recorded twice replays in capture order then
+  repeats the last; an unrecorded command is a `*CassetteMissError` (matching the
+  new `ErrCassetteMiss` sentinel) that never spawns a subprocess, distinct from a
+  missing program. A cassette redacts environment **values** (stores names only),
+  but `program` / `args` / `cwd` / `stdout` / `stderr` are stored verbatim — the
+  file is written `0600` on Unix (refusing to follow a symlink), inherits the
+  directory ACL on Windows, and a "review before committing" note is documented.
 - Observability: an optional [`log/slog`](https://pkg.go.dev/log/slog) logger via
   `WithLogger`, off by default — on a `Cmd`, a `Pipeline`, a `Supervisor`, a
   `CliClient`, and a `Group` (the `WithLogger` `GroupOption`). Structured events

@@ -315,6 +315,35 @@ git := &Git{client: processkit.NewClient("git").WithRunner(scripted)}
 them (`rec.OnlyCall().Args`). Writing your own runner? Build its results with
 `processkit.NewResult`.
 
+### Recording & replaying runs
+
+`RecordReplayRunner` captures real runs to a JSON cassette once, then replays them
+hermetically — no subprocess in CI:
+
+```go
+// Record once against the real tool:
+rec := processkittest.Record("testdata/git.json", processkit.JobRunner{})
+out, _ := processkit.Command("git", "--version").WithRunner(rec).Output(ctx)
+_ = rec.Save() // writes the cassette (0600 on Unix)
+
+// Replay everywhere else — identical results, no `git` needed:
+rep, _ := processkittest.Replay("testdata/git.json")
+out2, _ := processkit.Command("git", "--version").WithRunner(rep).Output(ctx)
+// out2 matches out; an unrecorded command is a *CassetteMissError (errors.Is
+// ErrCassetteMiss), distinct from a missing program, and never spawns anything.
+```
+
+A run is matched on program + args + working directory (environment is excluded, so
+an irrelevant env difference can't cause a miss). A command recorded twice replays
+in capture order, then repeats the last.
+
+**Secrets:** a cassette redacts environment **values** (it stores variable *names*
+only), but **`program`, `args`, `cwd`, `stdout`, and `stderr` are stored verbatim**
+and can carry secrets — a `--password=…` flag, a token echoed to output. Review a
+fixture before committing it. On Unix the file is written owner-only (`0600`) and
+the write refuses to follow a symlink; on Windows it inherits the directory ACL, so
+keep the fixture directory restricted.
+
 ### Observability
 
 Attach a [`log/slog`](https://pkg.go.dev/log/slog) logger with `WithLogger` — on a
