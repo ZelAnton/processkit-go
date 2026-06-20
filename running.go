@@ -76,6 +76,9 @@ func (p *RunningProcess) Pid() int {
 // start did not enable streaming, Lines returns an already-closed channel, so
 // ranging over it is always safe. Drain it until it closes, or cancel the start
 // context, so a slow reader can't stall the process under [OverflowBlock].
+//
+// [RunningProcess.WaitForLine] consumes this same channel, so don't range Lines
+// concurrently with a readiness probe — they would steal lines from each other.
 func (p *RunningProcess) Lines() <-chan Line {
 	if p.lines == nil {
 		return closedLineChan

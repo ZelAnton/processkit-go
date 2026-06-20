@@ -45,9 +45,10 @@
 // A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
 // waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
 // TCP address to accept connections, and [RunningProcess.WaitFor] polls a custom
-// predicate. A probe never kills the process: if it isn't ready by the deadline you
-// get a [*NotReadyError] (matching [ErrNotReady], distinct from [ErrTimeout]) and
-// decide what to do next.
+// predicate. These wait for the process to become *ready* (and leave it running) —
+// not for it to *exit*, which is [RunningProcess.Wait]. A probe never kills the
+// process: if it isn't ready by the deadline you get a [*NotReadyError] (matching
+// [ErrNotReady], distinct from [ErrTimeout]) and decide what to do next.
 //
 // To keep a command alive, wrap it in a [Supervisor]: it re-runs the command on
 // a crash with capped-exponential backoff (plus jitter, and an optional
@@ -65,9 +66,9 @@
 // Context cancellation is reported two ways, by design: every verb that owns the
 // run — the [Cmd], [Pipeline], and [Supervisor] verbs — wraps it in a
 // [*CancelError] (a rich typed error), while the live-handle observers
-// ([RunningProcess.Wait], [WaitAny], [WaitAll]) return the bare context error, so
-// you can errors.Is it against context.Canceled / context.DeadlineExceeded without
-// unwrapping. Note also that
+// ([RunningProcess.Wait], [WaitAny], [WaitAll], and the readiness probes) return
+// the bare context error, so you can errors.Is it against context.Canceled /
+// context.DeadlineExceeded without unwrapping. Note also that
 // the stream options ([WithStdin], [WithStdout], [StreamLines], …) are
 // package-level functions, not [Cmd] methods, because they configure a live
 // [Group.Start] rather than the capture builder.
