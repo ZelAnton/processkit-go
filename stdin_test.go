@@ -2,6 +2,7 @@ package processkit
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 )
@@ -46,5 +47,42 @@ func TestCmd_WithStdin_NoMutate(t *testing.T) {
 func TestCmd_NoStdinIsNil(t *testing.T) {
 	if Command("tool").invocation().Stdin != nil {
 		t.Error("a command without WithStdin should have a nil Invocation.Stdin")
+	}
+}
+
+func TestCmd_WithStdinString(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	res, err := Command(selfExe(t)).WithEnv(helperEnv("upper")...).
+		WithStdinString("hi there").Output(context.Background())
+	if err != nil {
+		t.Fatalf("Output: %v", err)
+	}
+	if res.Stdout() != "HI THERE" {
+		t.Errorf("Stdout = %q, want %q", res.Stdout(), "HI THERE")
+	}
+}
+
+// WithStdinBytes/String are re-readable: invocation() yields a fresh, fully-readable
+// reader each call, so a retry or supervisor restart feeds the full input again.
+func TestCmd_WithStdinBytes_ReReadable(t *testing.T) {
+	c := Command("tool").WithStdinBytes([]byte("data"))
+	readAll := func() string {
+		b, _ := io.ReadAll(c.invocation().Stdin)
+		return string(b)
+	}
+	if first, second := readAll(), readAll(); first != "data" || second != "data" {
+		t.Errorf("WithStdinBytes should re-read fully each time: first=%q second=%q", first, second)
+	}
+}
+
+// WithStdin is one-shot: the same reader is handed out, so a second run sees EOF.
+func TestCmd_WithStdin_OneShot(t *testing.T) {
+	c := Command("tool").WithStdin(strings.NewReader("data"))
+	first, _ := io.ReadAll(c.invocation().Stdin)
+	second, _ := io.ReadAll(c.invocation().Stdin)
+	if string(first) != "data" || len(second) != 0 {
+		t.Errorf("WithStdin should be one-shot: first=%q second=%q", first, second)
 	}
 }

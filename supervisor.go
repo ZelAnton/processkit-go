@@ -265,8 +265,6 @@ func (s *Supervisor) Run(ctx context.Context) (*SupervisionOutcome, error) {
 		src := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // jitter, not security
 		rng = src.Float64
 	}
-	inv := s.cmd.invocation()
-
 	var (
 		restarts    int
 		stormPauses int
@@ -277,7 +275,10 @@ func (s *Supervisor) Run(ctx context.Context) (*SupervisionOutcome, error) {
 			return nil, &CancelError{Program: s.cmd.program, Cause: ctx.Err()}
 		}
 
-		result, err := runner.Output(ctx, inv)
+		// Rebuild the invocation each incarnation so a re-readable stdin
+		// ([Cmd.WithStdinBytes]) is fed afresh on every restart (a one-shot
+		// [Cmd.WithStdin] reader is still consumed once — see its doc).
+		result, err := runner.Output(ctx, s.cmd.invocation())
 
 		var crashed bool
 		if err != nil {

@@ -1,6 +1,7 @@
 package processkit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,7 +31,13 @@ type Cmd struct {
 	runner  ProcessRunner
 	retry   *retryPolicy // nil unless WithRetry was set
 	log     runLog       // optional *slog.Logger; zero value is a no-op
-	stdin   io.Reader    // optional standard input for the capture verbs
+	// Standard input for the capture verbs. At most one is set: stdin is a one-shot
+	// io.Reader (WithStdin); stdinBytes is re-readable (WithStdinBytes/String, safe
+	// across retries/restarts), tracked by hasStdinBytes (to keep the nil/empty
+	// distinction).
+	stdin         io.Reader
+	stdinBytes    []byte
+	hasStdinBytes bool
 
 	// uncheckedInPipe exempts this command from a Pipeline's pipefail attribution.
 	// Deliberately NOT carried in invocation(), so it is inert outside a Pipeline
@@ -59,6 +66,7 @@ func (c *Cmd) clone() *Cmd {
 	cp.args = append([]string(nil), c.args...)
 	cp.env = cloneEnv(c.env)
 	cp.okCodes = append([]int(nil), c.okCodes...)
+	cp.stdinBytes = append([]byte(nil), c.stdinBytes...)
 	return &cp
 }
 
@@ -140,17 +148,33 @@ func (c *Cmd) WithRunner(r ProcessRunner) *Cmd {
 
 // WithStdin returns a copy of the command that feeds r as the process's standard
 // input for the capture verbs ([Cmd.Output], [Cmd.Run], [Cmd.ExitCode], [Cmd.Probe])
-// — e.g. piping a buffer into a tool: Command("jq", ".x").WithStdin(strings.NewReader(doc)).
-// r is read once as the run proceeds: combine it with [Cmd.WithRetry] only via a
-// re-readable source, since a retry can't rewind a consumed reader. It does NOT
-// apply to a command used as a [Pipe] stage (the chain wires stdin) or started in a
+// — e.g. streaming a source into a tool. r is read ONCE as the run proceeds, so it
+// is not safe to reuse across attempts: with [Cmd.WithRetry] or under a [Supervisor]
+// (which re-run the command) a second attempt sees EOF — use [Cmd.WithStdinBytes] /
+// [Cmd.WithStdinString] for a re-readable buffer instead. WithStdin does NOT apply
+// to a command used as a [Pipe] stage (the chain wires stdin) or started in a
 // [Group] (use the [WithStdin] start option there); record/replay cassettes reject a
 // command with stdin, whose result isn't reproducible from the recorded key.
 func (c *Cmd) WithStdin(r io.Reader) *Cmd {
 	cp := c.clone()
-	cp.stdin = r
+	cp.stdin, cp.stdinBytes, cp.hasStdinBytes = r, nil, false
 	return cp
 }
+
+// WithStdinBytes returns a copy of the command that feeds b as the process's
+// standard input for the capture verbs. Unlike [Cmd.WithStdin], the buffer is
+// re-readable — each run reads it afresh — so it is safe to combine with
+// [Cmd.WithRetry] and [Supervisor] (each attempt/restart gets the full input). The
+// other limitations of [Cmd.WithStdin] (Pipe/Group/cassette) apply.
+func (c *Cmd) WithStdinBytes(b []byte) *Cmd {
+	cp := c.clone()
+	cp.stdinBytes, cp.hasStdinBytes, cp.stdin = append([]byte(nil), b...), true, nil
+	return cp
+}
+
+// WithStdinString returns a copy of the command that feeds s as the process's
+// standard input — the string form of [Cmd.WithStdinBytes] (re-readable).
+func (c *Cmd) WithStdinString(s string) *Cmd { return c.WithStdinBytes([]byte(s)) }
 
 // WithLogger returns a copy of the command that emits structured [log/slog] events
 // over its lifetime — spawn, exit, timeout, cancellation, and retries. The default
@@ -200,6 +224,13 @@ func (c *Cmd) WithRetry(maxAttempts int, backoff time.Duration, retryIf func(err
 }
 
 func (c *Cmd) invocation() Invocation {
+	var stdin io.Reader
+	switch {
+	case c.hasStdinBytes:
+		stdin = bytes.NewReader(c.stdinBytes) // fresh each call: re-readable across retries/restarts
+	case c.stdin != nil:
+		stdin = c.stdin
+	}
 	return Invocation{
 		Program: c.program,
 		Args:    append([]string(nil), c.args...),
@@ -207,7 +238,7 @@ func (c *Cmd) invocation() Invocation {
 		Env:     cloneEnv(c.env),
 		OkCodes: append([]int(nil), c.okCodes...),
 		Timeout: c.timeout,
-		Stdin:   c.stdin,
+		Stdin:   stdin,
 	}
 }
 

@@ -65,7 +65,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/ZelAnton/processkit-go"
 )
@@ -87,9 +86,9 @@ func main() {
 	}
 	fmt.Println(version)
 
-	// Pipe a buffer into a tool (no shell) with WithStdin.
+	// Feed a buffer into a tool (no shell) with WithStdinString.
 	out, _ := processkit.Command("jq", ".name").
-		WithStdin(strings.NewReader(`{"name":"processkit"}`)).Run(ctx)
+		WithStdinString(`{"name":"processkit"}`).Run(ctx)
 	fmt.Println(out)
 }
 ```
