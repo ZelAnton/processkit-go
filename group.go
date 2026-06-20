@@ -248,6 +248,25 @@ func (g *Group) Members() []int {
 	return pids
 }
 
+// Processes returns a snapshot of the live process handles in the group — the
+// handle companion to [Group.Members] (which returns pids). A process that has
+// exited is omitted. Use it to [WaitAll] over a group's processes without having
+// retained every [Group.Start] handle yourself. Adopted processes are not included
+// (they have no handle; like [Group.Members]).
+func (g *Group) Processes() []*RunningProcess {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	live := make([]*RunningProcess, 0, len(g.procs))
+	for _, p := range g.procs {
+		select {
+		case <-p.done: // exited — not live
+		default:
+			live = append(live, p)
+		}
+	}
+	return live
+}
+
 // Signal sends sig to every process in the group (and everything they spawned).
 // [SignalKill] works on every platform — it is the atomic whole-tree kill, like
 // [Group.Close]; the other signals are delivered on Unix but return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 )
@@ -85,10 +86,26 @@ func (c *Cmd) WithDir(dir string) *Cmd {
 // WithEnv returns a copy of the command with the full environment set, replacing
 // the inherited one. Each entry is "KEY=VALUE"; calling it with no entries runs
 // with an *empty* environment (no PATH) — usually you want to pass through the
-// vars the program needs.
+// vars the program needs, or use [Cmd.AppendEnv] to add to the inherited set.
 func (c *Cmd) WithEnv(env ...string) *Cmd {
 	cp := c.clone()
 	cp.env = append([]string{}, env...) // non-nil even when empty: clears the env
+	return cp
+}
+
+// AppendEnv returns a copy of the command with entries added to its environment.
+// Unlike [Cmd.WithEnv] (which replaces the whole environment), AppendEnv builds on
+// the existing one — the inherited process environment if WithEnv was never called
+// — so it is the tool for the common "inherit, plus set a few" case (e.g.
+// AppendEnv("GIT_TERMINAL_PROMPT=0")). A later entry overrides an earlier one for
+// the same key, per exec's last-wins rule.
+func (c *Cmd) AppendEnv(env ...string) *Cmd {
+	cp := c.clone()
+	if cp.env == nil {
+		cp.env = append(os.Environ(), env...) // materialise the inherited env, then add
+	} else {
+		cp.env = append(cp.env, env...)
+	}
 	return cp
 }
 

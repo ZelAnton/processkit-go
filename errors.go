@@ -38,6 +38,10 @@ var (
 	// this via errors.Is.
 	ErrNotFound = errors.New("processkit: program not found")
 
+	// ErrStart means the process could not be started (spawned or contained). A
+	// [*StartError] matches this via errors.Is; unwrap it for the underlying OS cause.
+	ErrStart = errors.New("processkit: failed to start the process")
+
 	// ErrTooFewStages means a [Pipeline] was run with fewer than two stages. A
 	// pipeline needs at least two commands to chain.
 	ErrTooFewStages = errors.New("processkit: a pipeline needs at least two stages")
@@ -146,6 +150,9 @@ type StartError struct {
 func (e *StartError) Error() string {
 	return fmt.Sprintf("processkit: failed to start %s: %v", quoteProgram(e.Program), e.Err)
 }
+
+// Is matches the ErrStart sentinel (in addition to the wrapped cause via Unwrap).
+func (e *StartError) Is(target error) bool { return target == ErrStart }
 
 // Unwrap exposes the underlying OS error to errors.Is / errors.As.
 func (e *StartError) Unwrap() error { return e.Err }

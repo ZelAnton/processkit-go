@@ -76,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but `program` / `args` / `cwd` / `stdout` / `stderr` are stored verbatim — the
   file is written `0600` on Unix (refusing to follow a symlink), inherits the
   directory ACL on Windows, and a "review before committing" note is documented.
+- Pre-freeze API polish: `Group.Processes() []*RunningProcess` (the live-handle
+  companion to `Group.Members() []int`, so you can `WaitAll` over a group without
+  retaining every `Start` handle); `Cmd.AppendEnv` / `CliClient.AppendEnv` (add to
+  the inherited environment, complementing the *replacing* `WithEnv` — the fix for
+  the "inherit, plus set a few" footgun); and an `ErrStart` sentinel that
+  `*StartError` matches via `errors.Is` (completing the sentinel-plus-typed-error
+  pairing the rest of the taxonomy already has).
 - Observability: an optional [`log/slog`](https://pkg.go.dev/log/slog) logger via
   `WithLogger`, off by default — on a `Cmd`, a `Pipeline`, a `Supervisor`, a
   `CliClient`, and a `Group` (the `WithLogger` `GroupOption`). Structured events

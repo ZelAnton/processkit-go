@@ -22,6 +22,38 @@ errors.
 go get github.com/ZelAnton/processkit-go
 ```
 
+## Platform support
+
+Containment is kernel-backed and the active mechanism is observable
+(`Group.Mechanism()` / `Result.Mechanism()`) — never a silent downgrade. Where a
+platform can't honour an operation, processkit says so (`ErrUnsupported` /
+`ErrResourceLimit`) rather than skipping it silently.
+
+| Capability | Windows | Linux | macOS / BSD |
+| --- | --- | --- | --- |
+| Containment (no-orphan teardown) | Job Object — `KILL_ON_JOB_CLOSE`, kernel-enforced even if the parent is hard-killed | process group¹ | process group¹ |
+| Run/capture, streaming, pipelines, supervision, retries, probes, CLI client, record/replay | ✅ | ✅ | ✅ |
+| Resource **stats** (`Group.Stats`, `RunningProcess.Profile`) | ✅ CPU + peak memory + count | per-process CPU/memory (`/proc`); group = count | count only (no `/proc`) |
+| Resource **limits** (`WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota`) | ✅ enforced (Job Object) | ❌ `ErrResourceLimit`² | ❌ `ErrResourceLimit` |
+| `Signal(SignalKill)` (atomic whole-tree kill) | ✅ | ✅ | ✅ |
+| Other signals, `Suspend` / `Resume` | ❌ `ErrUnsupported` | ✅ | ✅ |
+| `Adopt` an external process | ✅ | ✅ | ✅ |
+
+¹ A POSIX process group is weaker than a Job Object: a child that calls `setsid`
+escapes it, and teardown needs the parent to dispatch the kill (the `defer
+group.Close()` path), so it is best-effort rather than kernel-enforced.
+
+² A Linux **cgroup v2** backend that enforces limits (and strengthens containment)
+is planned; until then a limit requested on Linux fails fast rather than going
+unenforced. Even with cgroups, enforcement needs the process at the real cgroup-v2
+root — not under systemd or in an ordinary container — so fail-fast is the common
+path regardless.
+
+**Teardown asymmetry worth knowing:** only the Windows Job Object's
+`KILL_ON_JOB_CLOSE` survives a hard kill of the parent. On Unix the no-orphan
+guarantee degrades to "holds as long as you don't forget `defer group.Close()`"
+(plus `context` cancellation) — there is no RAII or finalizer to lean on, by design.
+
 ## Usage
 
 ```go
@@ -287,8 +319,8 @@ output-parsing, and is **mockable by construction**:
 type Git struct{ client *processkit.CliClient }
 
 func NewGit() *Git {
-	// WithEnv replaces the environment, so to add a var keep the rest:
-	// .WithEnv(append(os.Environ(), "GIT_TERMINAL_PROMPT=0")...)
+	// WithEnv replaces the environment; AppendEnv adds to the inherited one:
+	// .AppendEnv("GIT_TERMINAL_PROMPT=0")
 	return &Git{client: processkit.NewClient("git")}
 }
 func (g *Git) CurrentBranch(ctx context.Context) (string, error) {

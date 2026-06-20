@@ -56,6 +56,13 @@ func (c *CliClient) WithEnv(env ...string) *CliClient {
 	return &CliClient{base: c.base.WithEnv(env...)}
 }
 
+// AppendEnv returns a copy of the client whose commands add env to the inherited
+// environment (rather than replacing it, as [CliClient.WithEnv] does). See
+// [Cmd.AppendEnv].
+func (c *CliClient) AppendEnv(env ...string) *CliClient {
+	return &CliClient{base: c.base.AppendEnv(env...)}
+}
+
 // WithDir returns a copy of the client whose commands default to the working
 // directory dir (a per-command [Cmd.WithDir] overrides it).
 func (c *CliClient) WithDir(dir string) *CliClient {
