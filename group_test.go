@@ -341,8 +341,13 @@ func TestGroup_Adopt(t *testing.T) {
 		_ = g.Close()
 		t.Fatalf("start external: %v", err)
 	}
-	pid := ext.Process.Pid
 	time.Sleep(50 * time.Millisecond) // let the child finish exec'ing before adopting
+
+	// Reap the external process in the background, so a kill is observed promptly:
+	// a killed-but-unreaped zombie still looks alive to a bare pid probe (notably on
+	// macOS, which has no zombie-aware /proc). Wait completing IS the kill signal.
+	waited := make(chan error, 1)
+	go func() { waited <- ext.Wait() }()
 
 	if err := g.Adopt(ext.Process); err != nil {
 		_ = ext.Process.Kill()
@@ -352,15 +357,12 @@ func TestGroup_Adopt(t *testing.T) {
 	if err := g.Close(); err != nil { // tears down the adopted process
 		t.Fatalf("Close: %v", err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for processAlive(pid) {
-		if time.Now().After(deadline) {
-			_ = ext.Process.Kill()
-			t.Fatalf("adopted process %d still alive after Close", pid)
-		}
-		time.Sleep(20 * time.Millisecond)
+	select {
+	case <-waited: // Close killed and we reaped the adopted process — contained.
+	case <-time.After(3 * time.Second):
+		_ = ext.Process.Kill()
+		t.Fatal("adopted process still running 3s after Close — Adopt did not contain it")
 	}
-	_ = ext.Wait() // reap our handle
 }
 
 func TestSignal_String(t *testing.T) {
