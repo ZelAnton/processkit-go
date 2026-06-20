@@ -5,21 +5,22 @@ package sys
 import (
 	"errors"
 	"os/exec"
+	"sync"
 	"syscall"
 )
 
-// pgroupJob contains a tree via a POSIX process group: the child is made a group
-// leader (Setpgid, so pgid == its pid) and teardown is killpg over the group.
-// This is the macOS/BSD mechanism and the Linux fallback. Weaker than a cgroup or
-// Job Object — a child that calls setsid escapes the group. Teardown is pid-based,
-// so it carries the usual small pid-reuse window if the leader is reaped before
-// Kill runs.
+// pgroupJob contains a set of trees via POSIX process groups: each child is made
+// a group leader (Setpgid, so pgid == its pid) and teardown is killpg over every
+// tracked group. This is the mechanism on every Unix (Linux, macOS, the BSDs)
+// today. Weaker than a Job Object — a child that calls setsid escapes its group.
+// Teardown is pid-based, so it carries the usual small pid-reuse window if a
+// leader is reaped before Kill runs.
 type pgroupJob struct {
-	pgid int
-	set  bool
+	mu    sync.Mutex // guards pgids: Assign appends while Signal/Kill read
+	pgids []int
 }
 
-func newJob() Job { return &pgroupJob{} }
+func newJob() (Job, error) { return &pgroupJob{}, nil }
 
 func (j *pgroupJob) Configure(cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil {
@@ -36,22 +37,31 @@ func (j *pgroupJob) Assign(cmd *exec.Cmd) error {
 	}
 	// With Setpgid and no Pgid set, the kernel makes the child its own group
 	// leader, so the group id equals the child pid.
-	j.pgid = cmd.Process.Pid
-	j.set = true
+	j.mu.Lock()
+	j.pgids = append(j.pgids, cmd.Process.Pid)
+	j.mu.Unlock()
 	return nil
 }
 
-func (j *pgroupJob) Kill() error {
-	if !j.set {
-		return nil
+func (j *pgroupJob) Signal(sig int) error {
+	j.mu.Lock()
+	pgids := append([]int(nil), j.pgids...)
+	j.mu.Unlock()
+
+	var firstErr error
+	for _, pgid := range pgids {
+		// Negative pid targets the whole process group. ESRCH means that group is
+		// already gone — success for an idempotent broadcast.
+		if err := syscall.Kill(-pgid, syscall.Signal(sig)); err != nil && !errors.Is(err, syscall.ESRCH) {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
-	// Negative pid targets the whole process group. ESRCH means the group is
-	// already gone — success for an idempotent teardown.
-	if err := syscall.Kill(-j.pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return err
-	}
-	return nil
+	return firstErr
 }
+
+func (j *pgroupJob) Kill() error { return j.Signal(int(syscall.SIGKILL)) }
 
 func (j *pgroupJob) Close() error { return nil }
 

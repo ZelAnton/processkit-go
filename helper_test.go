@@ -50,6 +50,26 @@ func TestMain(m *testing.M) {
 	case "selfsig":
 		selfSig() // Unix: SIGKILL self → Signalled outcome. Windows: os.Exit(42).
 		os.Exit(43)
+	case "groupchild":
+		// Spawn a lingering grandchild, record its pid to PK_PIDFILE, then linger —
+		// so a Group.Close must reap the grandchild via the shared container.
+		exe, err := os.Executable()
+		if err != nil {
+			os.Exit(97)
+		}
+		gc := exec.Command(exe)
+		gc.Env = append(cleanEnv(), "PK_HELPER=sleep")
+		if err := gc.Start(); err != nil {
+			os.Exit(98)
+		}
+		if pf := os.Getenv("PK_PIDFILE"); pf != "" {
+			_ = os.WriteFile(pf, []byte(strconv.Itoa(gc.Process.Pid)), 0o600)
+		}
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "termexit":
+		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.
+		os.Exit(44)
 	default:
 		os.Exit(99)
 	}

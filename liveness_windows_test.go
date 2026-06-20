@@ -28,3 +28,7 @@ func processAlive(pid int) bool {
 // selfSig exists so TestMain compiles on Windows; the Signalled test that uses it
 // is Unix-only (Windows has no signal abstraction).
 func selfSig() { os.Exit(42) }
+
+// termExit exists so TestMain compiles on Windows; the graceful-shutdown test
+// that uses it is Unix-only (Windows shutdown is an atomic kill).
+func termExit() { os.Exit(0) }

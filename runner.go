@@ -73,7 +73,10 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	job := sys.NewJob()
+	job, err := sys.NewJob()
+	if err != nil {
+		return nil, &StartError{Program: inv.Program, Err: err}
+	}
 	defer job.Close()
 	if err := job.Configure(cmd); err != nil {
 		// TODO(cgroup): a future cgroup Configure failure (couldn't create/enable

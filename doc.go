@@ -18,6 +18,13 @@
 // [ErrCancelled], [ErrNotFound], …) and the rich [*ExitError] / [*NotFoundError]
 // with errors.As.
 //
+// For several processes that must die together — a server and its helpers — use a
+// [Group]: a shared kill-on-drop container. [Group.Start] runs each process into
+// one OS container; [Group.Close] (use `defer`) reaps the whole tree. [Group.Shutdown]
+// ends it gracefully (SIGTERM → grace → SIGKILL on Unix; an immediate atomic kill
+// on Windows). [WaitAny] / [WaitAll] race or join started processes, and [OutputAll]
+// runs a batch of commands with a concurrency cap.
+//
 // The [ProcessRunner] interface is the dependency-injection and test seam: swap
 // the real [JobRunner] for a fake to test command-running code with no subprocess.
 //

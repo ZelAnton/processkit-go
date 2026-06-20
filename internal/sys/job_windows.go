@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -16,17 +17,33 @@ import (
 // locally so we don't depend on whether x/sys/windows exports the class constant.
 const jobObjectExtendedLimitInformation = 9
 
-// winJob contains a tree in a Windows Job Object with KILL_ON_JOB_CLOSE. The
-// child is created suspended (Configure), assigned to the job, then resumed
-// (Assign) — closing the race where a fast child forks a grandchild before it is
-// inside the job. os/exec hides the primary thread handle, so the resume goes via
-// a Toolhelp thread snapshot.
+// winJob contains a set of trees in one Windows Job Object with
+// KILL_ON_JOB_CLOSE. Each child is created suspended (Configure), assigned to the
+// job, then resumed (Assign) — closing the race where a fast child forks a
+// grandchild before it is inside the job. os/exec hides the primary thread
+// handle, so the resume goes via ntdll's NtResumeProcess. The job holds many
+// children (a shared group) or one (a private per-run job).
 type winJob struct {
-	handle   windows.Handle
-	assigned bool
+	mu     sync.Mutex // guards handle: Assign/Kill read it while Close nulls it
+	handle windows.Handle
 }
 
-func newJob() Job { return &winJob{handle: windows.InvalidHandle} }
+func newJob() (Job, error) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("CreateJobObject: %w", err)
+	}
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if _, err := windows.SetInformationJobObject(
+		job, jobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)),
+	); err != nil {
+		_ = windows.CloseHandle(job)
+		return nil, fmt.Errorf("SetInformationJobObject: %w", err)
+	}
+	return &winJob{handle: job}, nil
+}
 
 func (j *winJob) Configure(cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil {
@@ -42,9 +59,16 @@ func (j *winJob) Assign(cmd *exec.Cmd) error {
 	}
 	pid := uint32(cmd.Process.Pid)
 
-	// UncontainedChildGuard: between Start (suspended) and a successful assign the
+	j.mu.Lock()
+	jobHandle := j.handle
+	j.mu.Unlock()
+	if jobHandle == windows.InvalidHandle || jobHandle == 0 {
+		return errors.New("sys: job is closed")
+	}
+
+	// UncontainedChildGuard: between Start (suspended) and a successful assign this
 	// child is an orphan nothing reaps — Go has no Drop. Until contained, any
-	// failure path must terminate it.
+	// failure must terminate just this child (not the shared group).
 	contained := false
 	defer func() {
 		if !contained {
@@ -55,58 +79,46 @@ func (j *winJob) Assign(cmd *exec.Cmd) error {
 		}
 	}()
 
-	job, err := windows.CreateJobObject(nil, nil)
-	if err != nil {
-		return fmt.Errorf("CreateJobObject: %w", err)
-	}
-	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	if _, err := windows.SetInformationJobObject(
-		job, jobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)),
-	); err != nil {
-		_ = windows.CloseHandle(job)
-		return fmt.Errorf("SetInformationJobObject: %w", err)
-	}
-
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME, false, pid)
 	if err != nil {
-		_ = windows.CloseHandle(job)
 		return fmt.Errorf("OpenProcess: %w", err)
 	}
 	defer windows.CloseHandle(ph)
 
 	// A nested-job ACCESS_DENIED (this process already in a no-nest job, common on
 	// CI runners) surfaces here — never a silent uncontained spawn.
-	if err := windows.AssignProcessToJobObject(job, ph); err != nil {
-		_ = windows.CloseHandle(job)
+	if err := windows.AssignProcessToJobObject(jobHandle, ph); err != nil {
 		return fmt.Errorf("AssignProcessToJobObject: %w", err)
 	}
-	// From here the job owns the child: record it so even a resume failure is
-	// torn down via Kill (the job), not left as an uncontained orphan.
-	contained = true
-	j.handle = job
-	j.assigned = true
+	contained = true // the job now owns the child; the guard no-ops.
 
-	// Resume the suspended child. os/exec hides the primary thread handle, so we
-	// resume the whole process by handle via ntdll rather than enumerating its
-	// threads with a Toolhelp snapshot (which races a just-created thread under
-	// load). If this fails the child is contained but stranded — Kill (the job
-	// owns it) reaps it, never a hang.
+	// Resume the suspended child by handle (os/exec hides the primary thread). If
+	// this fails the child is stranded suspended — terminate just it (don't kill
+	// the shared group) and report.
 	if err := ntResumeProcess(ph); err != nil {
+		_ = windows.TerminateProcess(ph, 1)
 		return fmt.Errorf("resume process: %w", err)
 	}
 	return nil
 }
 
+// Signal is unsupported on Windows: a Job Object delivers no signals, only the
+// terminate path. Use Kill.
+func (j *winJob) Signal(sig int) error { return ErrUnsupported }
+
 func (j *winJob) Kill() error {
-	if !j.assigned {
+	j.mu.Lock()
+	h := j.handle
+	j.mu.Unlock()
+	if h == windows.InvalidHandle || h == 0 {
 		return nil
 	}
-	return windows.TerminateJobObject(j.handle, 1)
+	return windows.TerminateJobObject(h, 1)
 }
 
 func (j *winJob) Close() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	if j.handle != windows.InvalidHandle && j.handle != 0 {
 		err := windows.CloseHandle(j.handle)
 		j.handle = windows.InvalidHandle
