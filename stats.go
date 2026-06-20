@@ -74,7 +74,9 @@ func (p RunProfile) AvgCPU() (float64, bool) {
 	return p.cpuTime.Seconds() / p.duration.Seconds(), true
 }
 
-// Stats returns a whole-tree resource snapshot of the group.
+// Stats returns a whole-tree resource snapshot of the group. After [Group.Close]
+// it reports a zero snapshot (no error): the tree has been torn down, so there is
+// nothing left to count.
 func (g *Group) Stats() (GroupStats, error) {
 	st, err := g.job.Stats()
 	if err != nil {
@@ -92,7 +94,8 @@ func (g *Group) Stats() (GroupStats, error) {
 // SampleStats returns a channel of resource snapshots sampled every interval
 // (clamped to a 1ms minimum), starting with an immediate sample. The channel is
 // closed when ctx is cancelled or a sample fails. Drain it until it closes, or
-// cancel ctx, so the sampler doesn't block on a slow reader.
+// cancel ctx, so the sampler doesn't block on a slow reader. Cancelling ctx is the
+// only way to stop the sampler — [Group.Close] does not (cancel ctx, then Close).
 func (g *Group) SampleStats(ctx context.Context, interval time.Duration) <-chan GroupStats {
 	if interval < time.Millisecond {
 		interval = time.Millisecond
@@ -144,7 +147,9 @@ func (p *RunningProcess) PeakMemoryBytes() (uint64, bool) {
 	return m.PeakMemory, m.HasMem
 }
 
-// Elapsed returns how long the process has been running since it was started.
+// Elapsed returns the wall-clock time since the process was started. Unlike
+// [RunProfile.Duration] it is not frozen at exit — it keeps increasing after the
+// process ends (it is "time since start", not "run duration").
 func (p *RunningProcess) Elapsed() time.Duration { return time.Since(p.startTime) }
 
 // Profile waits for the process to exit, sampling its CPU time and peak memory

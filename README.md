@@ -163,7 +163,8 @@ fmt.Println(st.ActiveProcesses())               // live process count
 if cpu, ok := st.CPUTime(); ok { … }            // cumulative CPU (Job Object backend)
 
 prof, _ := proc.Profile(ctx, 50*time.Millisecond) // sample one run to exit
-fmt.Println(prof.Duration(), prof.PeakMemoryBytes(), prof.AvgCPU())
+fmt.Println(prof.Duration())                    // wall-clock, always available
+if mem, ok := prof.PeakMemoryBytes(); ok { … }  // every optional metric returns ok
 ```
 
 `Group.SampleStats(ctx, every)` returns a channel of snapshots. A metric a platform
