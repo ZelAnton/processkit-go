@@ -169,6 +169,18 @@ func TestMain(m *testing.M) {
 		}
 		fmt.Println("ok")
 		os.Exit(0)
+	case "tickfile":
+		// Append a byte to PK_TICKFILE every PK_DELAY_MS, forever — a progress signal
+		// the suspend/resume test watches (a suspended process stops growing it).
+		path := os.Getenv("PK_TICKFILE")
+		delay := time.Duration(envInt("PK_DELAY_MS", 5)) * time.Millisecond
+		for {
+			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+				_, _ = f.Write([]byte{'.'})
+				_ = f.Close()
+			}
+			time.Sleep(delay)
+		}
 	case "termexit":
 		termExit() // Unix: exit 0 on SIGTERM (graceful). Windows: exit 0.
 		os.Exit(44)

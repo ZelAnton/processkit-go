@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Whole-tree process control on `Group`: `Signal(Signal)`, `Suspend` / `Resume`,
+  and `Adopt(*os.Process)`. A portable `Signal` type (`SignalTerm` / `SignalKill` /
+  `SignalInt` / `SignalHup` / `SignalQuit` / `SignalUsr1` / `SignalUsr2` +
+  `RawSignal(n)`). `SignalKill` works everywhere (the atomic whole-tree kill);
+  other signals and `Suspend` / `Resume` are Unix-only and return `ErrUnsupported`
+  on Windows (never a silent no-op). `Adopt` works on both (Job Object / setpgid),
+  pulling an externally-started process into the group's containment.
 - `CliClient` — a reusable core for typed wrappers around one CLI tool:
   `NewClient(program)` with copy-on-write `WithRunner` / `WithTimeout` / `WithEnv` /
   `WithDir` / `WithOkCodes` defaults, `Command(args...)` to build a sub-command, and

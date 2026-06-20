@@ -153,6 +153,27 @@ context is terminal (never retried). It applies to the success-requiring verbs
 `IsTransient` helper is a ready-made classifier. This is **replay-to-success**;
 to keep a long-running process *alive* across crashes, use `Supervise` instead.
 
+### Whole-tree process control
+
+A `Group` can signal, pause, and adopt processes as a unit:
+
+```go
+group.Signal(processkit.SignalHup)   // reload the whole tree (SIGHUP)
+group.Suspend(); group.Resume()      // freeze and thaw the tree
+group.Adopt(cmd.Process)             // pull an externally-started process in
+```
+
+Operations a platform can't honour return `ErrUnsupported` explicitly — **never a
+silent no-op**. The honesty matrix:
+
+| Operation                  | Unix                | Windows            |
+| -------------------------- | ------------------- | ------------------ |
+| `Signal(SignalKill)`       | ✅ killpg / atomic  | ✅ TerminateJobObject |
+| `Signal(other / RawSignal)`| ✅ killpg           | ❌ `ErrUnsupported`  |
+| `Suspend` / `Resume`       | ✅ SIGSTOP / SIGCONT| ❌ `ErrUnsupported`  |
+| `Adopt`                    | ✅ setpgid / solo   | ✅ AssignProcessToJobObject |
+| `Members`                  | ✅                  | ✅                 |
+
 ### Readiness probes
 
 A group-started process can be probed for readiness — and a probe **never kills**

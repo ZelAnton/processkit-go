@@ -106,6 +106,60 @@ func (j *winJob) Assign(cmd *exec.Cmd) error {
 // terminate path. Use Kill.
 func (j *winJob) Signal(sig int) error { return ErrUnsupported }
 
+// Suspend and Resume are unsupported on Windows for now: a Job Object has no
+// freeze, and a correct whole-tree pause needs a per-member thread-suspend walk
+// (deferred). Honest ErrUnsupported rather than a partial pause.
+func (j *winJob) Suspend() error { return ErrUnsupported }
+func (j *winJob) Resume() error  { return ErrUnsupported }
+
+// Adopt assigns an externally-started process to the job, so it (and everything it
+// spawns from now on) is torn down with the group. A process that has already
+// exited (and been reaped) is a benign success; a real failure — including a
+// permission error, or a nested no-break job — is surfaced, never a silent no-op.
+// The whole operation holds the job lock so it can't race a concurrent Close.
+func (j *winJob) Adopt(pid int) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.handle == windows.InvalidHandle || j.handle == 0 {
+		return errors.New("sys: job is closed")
+	}
+
+	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		// A never-existed / already-reaped pid is benign; any other failure (e.g.
+		// ACCESS_DENIED for a process we can't touch) is real.
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return nil
+		}
+		return fmt.Errorf("OpenProcess: %w", err)
+	}
+	defer windows.CloseHandle(ph)
+
+	if err := windows.AssignProcessToJobObject(j.handle, ph); err != nil {
+		// If the process exited between OpenProcess and the assign, treat it as a
+		// benign no-op; otherwise surface the failure.
+		if exited, e := processExited(ph); e == nil && exited {
+			return nil
+		}
+		return fmt.Errorf("AssignProcessToJobObject: %w", err)
+	}
+	return nil
+}
+
+// processExited reports whether the process (by handle) has terminated.
+func processExited(h windows.Handle) (bool, error) {
+	var code uint32
+	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+		return false, err
+	}
+	return code != stillActive, nil
+}
+
+// stillActive is STILL_ACTIVE (259): GetExitCodeProcess reports it while a process
+// is running. (A process that genuinely exits with 259 is indistinguishable, an
+// accepted Win32 quirk.)
+const stillActive = 259
+
 func (j *winJob) Kill() error {
 	j.mu.Lock()
 	h := j.handle

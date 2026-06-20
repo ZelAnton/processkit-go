@@ -82,6 +82,31 @@ func ExampleCmd_WithRetry() {
 	fmt.Println(out)
 }
 
+func ExampleGroup_Signal() {
+	ctx := context.Background()
+	group, err := processkit.NewGroup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close()
+
+	server, err := group.Start(ctx, processkit.Command("my-server"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = server
+
+	// Ask the whole tree to reload its config (SIGHUP). SignalKill works on every
+	// platform; the other signals are Unix-only and return ErrUnsupported on Windows.
+	if err := group.Signal(processkit.SignalHup); err != nil {
+		log.Println("reload not delivered:", err) // e.g. ErrUnsupported on Windows
+	}
+
+	// Pause and resume the whole tree (Unix; ErrUnsupported on Windows).
+	_ = group.Suspend()
+	_ = group.Resume()
+}
+
 func ExampleRunningProcess_WaitForPort() {
 	ctx := context.Background()
 	group, err := processkit.NewGroup()

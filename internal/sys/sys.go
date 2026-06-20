@@ -48,6 +48,15 @@ type Job interface {
 	// ErrUnsupported where a platform can't deliver it (Windows supports only the
 	// terminate path — use Kill).
 	Signal(sig int) error
+	// Suspend freezes every member; Resume thaws them. Returns ErrUnsupported where
+	// a platform can't (Windows, here). Unix uses SIGSTOP / SIGCONT.
+	Suspend() error
+	Resume() error
+	// Adopt pulls an externally-started process (by pid) into the job's
+	// containment, so it is torn down with the group. Best-effort: an exited pid is
+	// a success; the containment may be degraded (a process group can't always
+	// reparent an already-exec'd child — it is then tracked individually).
+	Adopt(pid int) error
 	// Kill hard-kills every member. Idempotent; a group that already exited is
 	// success.
 	Kill() error

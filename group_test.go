@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -289,6 +290,92 @@ func TestGroup_StartRacingCloseNoLeak(t *testing.T) {
 			t.Fatalf("process %d not reaped after Close: %v — goroutine leak", p.Pid(), err)
 		}
 		cancel()
+	}
+}
+
+// TestGroup_SignalKill tears the group down with SignalKill — the one portable
+// signal, routed to the atomic whole-tree kill on every platform.
+func TestGroup_SignalKill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess test")
+	}
+	ctx := context.Background()
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+	defer g.Close()
+
+	p, err := g.Start(ctx, Command(selfExe(t)).WithEnv(helperEnv("sleep")...))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pid := p.Pid()
+	if err := g.Signal(SignalKill); err != nil {
+		t.Fatalf("Signal(SignalKill): %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for processAlive(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("process %d still alive after SignalKill", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestGroup_Adopt brings an externally-started process into the group and confirms
+// Close reaps it — the no-orphan guarantee extended to an adopted process.
+func TestGroup_Adopt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-subprocess / kill-on-drop test")
+	}
+	g, err := NewGroup()
+	if err != nil {
+		t.Fatalf("NewGroup: %v", err)
+	}
+
+	// Start a process OUTSIDE the group, directly via os/exec.
+	ext := exec.Command(selfExe(t))
+	ext.Env = helperEnv("sleep")
+	if err := ext.Start(); err != nil {
+		_ = g.Close()
+		t.Fatalf("start external: %v", err)
+	}
+	pid := ext.Process.Pid
+
+	if err := g.Adopt(ext.Process); err != nil {
+		_ = ext.Process.Kill()
+		_ = g.Close()
+		t.Fatalf("Adopt: %v", err)
+	}
+	if err := g.Close(); err != nil { // tears down the adopted process
+		t.Fatalf("Close: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for processAlive(pid) {
+		if time.Now().After(deadline) {
+			_ = ext.Process.Kill()
+			t.Fatalf("adopted process %d still alive after Close", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = ext.Wait() // reap our handle
+}
+
+func TestSignal_String(t *testing.T) {
+	cases := map[Signal]string{
+		SignalTerm:    "SIGTERM",
+		SignalKill:    "SIGKILL",
+		SignalUsr1:    "SIGUSR1",
+		RawSignal(28): "signal 28",
+	}
+	for sig, want := range cases {
+		if got := sig.String(); got != want {
+			t.Errorf("Signal.String() = %q, want %q", got, want)
+		}
+	}
+	if !SignalKill.isKill() || SignalTerm.isKill() {
+		t.Fatal("isKill() should be true only for SignalKill")
 	}
 }
 

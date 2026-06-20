@@ -42,6 +42,13 @@
 // exempt from blame (the `producer | head` pattern). [Pipeline.WithTimeout] bounds
 // the whole chain.
 //
+// A [Group] also gives whole-tree process control: [Group.Signal] sends a [Signal]
+// to every member (only [SignalKill] is portable — the others are Unix-only and
+// return [ErrUnsupported] on Windows), [Group.Suspend] / [Group.Resume] freeze and
+// thaw the tree (Unix only), and [Group.Adopt] pulls an externally-started process
+// into the group's containment. Operations a platform can't honour return
+// [ErrUnsupported] explicitly — never a silent no-op.
+//
 // A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
 // waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
 // TCP address to accept connections, and [RunningProcess.WaitFor] polls a custom

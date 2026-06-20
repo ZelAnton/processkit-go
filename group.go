@@ -3,6 +3,8 @@ package processkit
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -164,6 +166,59 @@ func (g *Group) Members() []int {
 		}
 	}
 	return pids
+}
+
+// Signal sends sig to every process in the group (and everything they spawned).
+// [SignalKill] works on every platform — it is the atomic whole-tree kill, like
+// [Group.Close]; the other signals are delivered on Unix but return
+// [ErrUnsupported] on Windows, whose Job Object has no signal tier. Signalling a
+// group whose members have already exited is a no-op success.
+func (g *Group) Signal(sig Signal) error {
+	if sig.isKill() {
+		return g.job.Kill()
+	}
+	return mapUnsupported(g.job.Signal(sig.number()), "signal "+sig.String())
+}
+
+// Suspend freezes every process in the group; [Group.Resume] thaws them. On Unix
+// this is SIGSTOP / SIGCONT to the whole tree. On Windows it returns
+// [ErrUnsupported] (a Job Object has no freeze). A suspended group is still killed
+// by [Group.Close]; resume before [Group.Shutdown], as a frozen tree can't act on
+// SIGTERM.
+func (g *Group) Suspend() error { return mapUnsupported(g.job.Suspend(), "suspend") }
+
+// Resume thaws a group frozen by [Group.Suspend].
+func (g *Group) Resume() error { return mapUnsupported(g.job.Resume(), "resume") }
+
+// Adopt pulls an externally-started process — one you started yourself (e.g. via
+// os/exec) and have NOT yet waited on — into the group, so it is torn down when the
+// group is closed. Pass its [os.Process] (e.g. exec.Cmd.Process).
+//
+// Containment is best-effort: on Windows the process joins the Job Object; in a
+// POSIX process group it becomes a group leader when it can (capturing its future
+// descendants too), or is tracked individually if it has already exec'd. A process
+// that has already exited is a benign success. The adopted process is not listed by
+// [Group.Members] (that reports the processes you Started through the group).
+func (g *Group) Adopt(p *os.Process) error {
+	if p == nil {
+		return errors.New("processkit: Adopt(nil)")
+	}
+	g.mu.Lock()
+	closed := g.closed
+	g.mu.Unlock()
+	if closed {
+		return errGroupClosed
+	}
+	return mapUnsupported(g.job.Adopt(p.Pid), "adopt")
+}
+
+// mapUnsupported converts the internal sys.ErrUnsupported into the public
+// [ErrUnsupported], tagged with the operation, and passes any other error through.
+func mapUnsupported(err error, op string) error {
+	if errors.Is(err, sys.ErrUnsupported) {
+		return fmt.Errorf("processkit: %s is not supported on this platform: %w", op, ErrUnsupported)
+	}
+	return err
 }
 
 // Close hard-kills every process in the group (grandchildren included) and
