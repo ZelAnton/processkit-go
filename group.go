@@ -53,8 +53,11 @@ func WithMemoryMax(bytes uint64) GroupOption {
 }
 
 // WithMaxProcesses caps the number of live processes in the tree at n (> 0). On
-// Windows the Job Object's active-process limit rejects the process that would
-// exceed it. See [WithMemoryMax] for the unsupported-mechanism behaviour.
+// Windows the Job Object's active-process limit refuses the process that would
+// exceed it: a [Group.Start] (or [Group.Adopt]) past the cap fails — the process is
+// rejected, never silently admitted — so the failure surfaces through that call,
+// not as a creation-time error. See [WithMemoryMax] for the unsupported-mechanism
+// behaviour.
 func WithMaxProcesses(n uint32) GroupOption {
 	return func(c *groupConfig) { c.limits.MaxProcesses, c.limits.HasMaxProcesses = n, true }
 }
@@ -152,7 +155,9 @@ func (g *Group) Start(ctx context.Context, cmd *Cmd, opts ...StartOption) (*Runn
 	ecmd.WaitDelay = waitDelay
 
 	// Configure before opening any pipe, so a Configure failure (e.g. a future
-	// cgroup backend) can't strand a half-created pipe's file descriptors.
+	// cgroup backend) can't strand a half-created pipe's file descriptors. Resource
+	// caps are applied once at NewGroup, not per child, so a Configure failure here
+	// is a containment failure (a StartError), never an unenforceable-limit one.
 	if err := g.job.Configure(ecmd); err != nil {
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
@@ -258,6 +263,10 @@ func (g *Group) Resume() error { return mapUnsupported(g.job.Resume(), "resume")
 // descendants too), or is tracked individually if it has already exec'd. A process
 // that has already exited is a benign success. The adopted process is not listed by
 // [Group.Members] (that reports the processes you Started through the group).
+//
+// An adopted process counts against [WithMaxProcesses]: on a group capped at its
+// active-process limit, Adopt is refused (the process is not pulled in) and returns
+// the assignment error.
 func (g *Group) Adopt(p *os.Process) error {
 	if p == nil {
 		return errors.New("processkit: Adopt(nil)")

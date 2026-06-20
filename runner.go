@@ -146,6 +146,8 @@ func toMechanism(m sys.Mechanism) Mechanism {
 		return MechanismJobObject
 	case sys.ProcessGroup:
 		return MechanismProcessGroup
+	case sys.CgroupV2:
+		return MechanismCgroupV2
 	default:
 		return MechanismUnknown
 	}

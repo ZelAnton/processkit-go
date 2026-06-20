@@ -17,9 +17,14 @@ const (
 
 	// MechanismProcessGroup is a POSIX process group, torn down via killpg — the
 	// mechanism on every Unix (Linux, macOS, the BSDs) today. Weaker than a Job
-	// Object: a child that calls setsid escapes it. (A future Linux cgroup-v2
-	// mechanism will be added here when implemented.)
+	// Object: a child that calls setsid escapes it.
 	MechanismProcessGroup
+
+	// MechanismCgroupV2 is a Linux cgroup v2 subtree. Reserved for the planned
+	// cgroup backend (which would also enforce [WithMemoryMax] / [WithMaxProcesses]
+	// / [WithCPUQuota] on Linux); not yet produced — Linux uses
+	// MechanismProcessGroup today.
+	MechanismCgroupV2
 )
 
 // String returns the mechanism's name (e.g. "JobObject").
@@ -29,6 +34,8 @@ func (m Mechanism) String() string {
 		return "JobObject"
 	case MechanismProcessGroup:
 		return "ProcessGroup"
+	case MechanismCgroupV2:
+		return "CgroupV2"
 	default:
 		return "Unknown"
 	}

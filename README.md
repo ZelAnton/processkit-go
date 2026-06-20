@@ -183,20 +183,27 @@ group, err := processkit.NewGroup(
     processkit.WithMaxProcesses(64),         // at most 64 live processes
     processkit.WithCPUQuota(1.5),            // 1.5 cores' worth of CPU
 )
+if errors.Is(err, processkit.ErrResourceLimit) {
+    // the active mechanism can't enforce a requested cap — handle, don't ignore
+}
 ```
 
-Every cap bounds the **whole tree**, not one process, and is applied to the OS
-container at creation. Enforcement needs a real container: a **Windows Job Object**
-honours all three. A mechanism with no whole-tree limit primitive does **not**
-silently ignore a cap — `NewGroup` returns a `*ResourceLimitError` (matching
-`ErrResourceLimit`) so you never get a group you believe is bounded but isn't. An
-invalid value (zero, negative, non-finite) is rejected the same way. The honesty
-matrix:
+Limits are a **`Group`** facility — applied to the OS container at creation. There
+is deliberately no per-run (`Cmd`) or per-`Pipe` cap; to bound a command's tree,
+`Start` it into a limited group. Every cap bounds the **whole tree**, not one
+process. Enforcement needs a real container: a **Windows Job Object** honours all
+three. A mechanism with no whole-tree limit primitive does **not** silently ignore
+a cap — `NewGroup` returns a `*ResourceLimitError` (matching `ErrResourceLimit`) so
+you never get a group you believe is bounded but isn't. An invalid value (zero,
+negative, non-finite) is rejected the same way. The honesty matrix:
 
 | Backend                         | `WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota` |
 | ------------------------------- | ----------------------------------------------------- |
-| Windows Job Object              | ✅ enforced (job memory / active-process / CPU hard cap) |
+| Windows Job Object              | ✅ enforced (job memory / active-process / CPU hard cap¹) |
 | Linux / macOS / BSD (pgroup)    | ❌ `ErrResourceLimit` (no whole-tree cap primitive)   |
+
+¹ The Windows CPU cap is expressed against *total* system CPU, so `WithCPUQuota` is
+approximate (converted via the host core count) and saturates at 100%.
 
 A Linux **cgroup v2** backend that enforces these is planned; until it lands, a cap
 requested on Linux fails fast rather than going unenforced. (Even with cgroups, the

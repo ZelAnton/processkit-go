@@ -56,11 +56,13 @@
 // reported as unavailable (an ok bool), never an error.
 //
 // A group can also cap the whole tree's resources at creation: [NewGroup] takes
-// [WithMemoryMax], [WithMaxProcesses], and [WithCPUQuota]. A Windows Job Object
-// enforces all three; a mechanism with no whole-tree limit primitive (every Unix
-// backend today — a Linux cgroup-v2 backend is planned) makes [NewGroup] fail with
-// a [*ResourceLimitError] (matching [ErrResourceLimit]) rather than hand back a
-// silently-unbounded group. An unenforced limit is no protection.
+// [WithMemoryMax], [WithMaxProcesses], and [WithCPUQuota] (a Group-only facility —
+// there is no per-run or per-[Pipe] cap; Start a command into a limited group to
+// bound it). A Windows Job Object enforces all three; a mechanism with no
+// whole-tree limit primitive (every Unix backend today — a Linux cgroup-v2 backend
+// is planned) makes [NewGroup] fail with a [*ResourceLimitError] (matching
+// [ErrResourceLimit]) rather than hand back a silently-unbounded group. An
+// unenforced limit is no protection.
 //
 // A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
 // waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
@@ -98,9 +100,10 @@
 // ([RunningProcess.Wait], [WaitAny], [WaitAll], and the readiness probes) return
 // the bare context error, so you can errors.Is it against context.Canceled /
 // context.DeadlineExceeded without unwrapping. Note also that
-// the stream options ([WithStdin], [WithStdout], [StreamLines], …) are
-// package-level functions, not [Cmd] methods, because they configure a live
-// [Group.Start] rather than the capture builder.
+// the stream options ([WithStdin], [WithStdout], [StreamLines], …) and the group
+// limit options ([WithMemoryMax], …) are package-level functions, not [Cmd]
+// methods, because they configure a live [Group.Start] / [NewGroup] rather than the
+// capture builder.
 //
 // Only Windows and Unix (Linux, macOS, the BSDs) are supported.
 package processkit
