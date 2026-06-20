@@ -10,8 +10,9 @@ import (
 // signal (Unix only), or a timeout. Inspect it via the accessors; a missing exit
 // code is reported as (0, false), never a fabricated -1 sentinel.
 //
-// Outcomes are produced by running a command; there is no exported constructor
-// (a test double builds a [Result] through the testing helpers, not by hand).
+// Outcomes are normally produced by running a command; for a fake [ProcessRunner]
+// or a custom runner, build one with [Exited], [Signalled], or [TimedOut] (and a
+// whole [Result] with [NewResult]).
 type Outcome struct {
 	kind      outcomeKind
 	code      int  // valid when kind == outcomeExited
