@@ -173,6 +173,36 @@ backends differ: the **Job Object** (Windows) reports count + CPU + peak memory;
 the **process group** (Unix, no cgroup yet) reports the count only. Per-process
 `RunningProcess.CPUTime` / `PeakMemoryBytes` work on Linux and Windows, not macOS.
 
+### Resource limits
+
+Cap the whole tree's resources when you create the group:
+
+```go
+group, err := processkit.NewGroup(
+    processkit.WithMemoryMax(512*1024*1024), // 512 MiB across the tree
+    processkit.WithMaxProcesses(64),         // at most 64 live processes
+    processkit.WithCPUQuota(1.5),            // 1.5 cores' worth of CPU
+)
+```
+
+Every cap bounds the **whole tree**, not one process, and is applied to the OS
+container at creation. Enforcement needs a real container: a **Windows Job Object**
+honours all three. A mechanism with no whole-tree limit primitive does **not**
+silently ignore a cap — `NewGroup` returns a `*ResourceLimitError` (matching
+`ErrResourceLimit`) so you never get a group you believe is bounded but isn't. An
+invalid value (zero, negative, non-finite) is rejected the same way. The honesty
+matrix:
+
+| Backend                         | `WithMemoryMax` / `WithMaxProcesses` / `WithCPUQuota` |
+| ------------------------------- | ----------------------------------------------------- |
+| Windows Job Object              | ✅ enforced (job memory / active-process / CPU hard cap) |
+| Linux / macOS / BSD (pgroup)    | ❌ `ErrResourceLimit` (no whole-tree cap primitive)   |
+
+A Linux **cgroup v2** backend that enforces these is planned; until it lands, a cap
+requested on Linux fails fast rather than going unenforced. (Even with cgroups, the
+caps only apply where this process sits at the real cgroup-v2 root — not under
+systemd or in an ordinary container — so fail-fast is the common path regardless.)
+
 ### Whole-tree process control
 
 A `Group` can signal, pause, and adopt processes as a unit:

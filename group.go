@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"sync"
@@ -37,6 +38,35 @@ func ShutdownGrace(d time.Duration) ShutdownOption {
 // discards the process's output.
 type StartOption func(*startConfig)
 
+// GroupOption configures a [Group] at creation — currently the whole-tree resource
+// caps [WithMemoryMax], [WithMaxProcesses], and [WithCPUQuota]. Limits are applied
+// to the OS container when the group is created; they cannot be changed afterwards.
+type GroupOption func(*groupConfig)
+
+type groupConfig struct{ limits sys.Limits }
+
+// WithMemoryMax caps the whole tree's memory at bytes (which must be > 0). Enforced
+// by a Windows Job Object; on a mechanism without a whole-tree limit primitive
+// [NewGroup] returns a [*ResourceLimitError] rather than an unbounded group.
+func WithMemoryMax(bytes uint64) GroupOption {
+	return func(c *groupConfig) { c.limits.MemoryMax, c.limits.HasMemoryMax = bytes, true }
+}
+
+// WithMaxProcesses caps the number of live processes in the tree at n (> 0). On
+// Windows the Job Object's active-process limit rejects the process that would
+// exceed it. See [WithMemoryMax] for the unsupported-mechanism behaviour.
+func WithMaxProcesses(n uint32) GroupOption {
+	return func(c *groupConfig) { c.limits.MaxProcesses, c.limits.HasMaxProcesses = n, true }
+}
+
+// WithCPUQuota caps the tree's CPU at cores cores' worth (0.5 = half a core, 2.0 =
+// two cores; must be finite and > 0). On Windows the hard cap is expressed against
+// total system CPU and so is approximate; a quota at or above the core count
+// saturates at 100%. See [WithMemoryMax] for the unsupported-mechanism behaviour.
+func WithCPUQuota(cores float64) GroupOption {
+	return func(c *groupConfig) { c.limits.CPUQuota, c.limits.HasCPUQuota = cores, true }
+}
+
 // Group is an explicit, shared kill-on-drop container for a set of processes.
 // Every process started into the group — and everything those processes spawn —
 // lives in one OS container (a Windows Job Object, or POSIX process groups), so
@@ -52,13 +82,45 @@ type Group struct {
 	closed bool
 }
 
-// NewGroup creates an empty process group.
-func NewGroup() (*Group, error) {
-	job, err := sys.NewJob()
+// NewGroup creates an empty process group. Pass [WithMemoryMax],
+// [WithMaxProcesses], or [WithCPUQuota] to cap the whole tree's resources; those
+// caps are applied to the OS container now. If a cap is invalid, or the active
+// mechanism can't enforce it (no whole-tree limit primitive — every Unix backend
+// today), NewGroup returns a [*ResourceLimitError] (matching [ErrResourceLimit])
+// rather than handing back a silently-unbounded group.
+func NewGroup(opts ...GroupOption) (*Group, error) {
+	var cfg groupConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if err := validateLimits(cfg.limits); err != nil {
+		return nil, err
+	}
+	job, err := sys.NewJob(cfg.limits)
 	if err != nil {
+		// A creation failure with caps requested is, by construction, a limit that
+		// couldn't be enforced (the backend rejected it or has no primitive).
+		if cfg.limits.Any() {
+			return nil, &ResourceLimitError{Reason: err.Error(), Cause: err}
+		}
 		return nil, &StartError{Program: "<group>", Err: err}
 	}
 	return &Group{job: job, mechanism: toMechanism(job.Mechanism()), clk: realClock{}}, nil
+}
+
+// validateLimits rejects nonsensical caps before touching the OS, so a typo
+// surfaces as a clear [*ResourceLimitError] rather than an opaque kernel error.
+func validateLimits(l sys.Limits) error {
+	if l.HasMemoryMax && l.MemoryMax == 0 {
+		return &ResourceLimitError{Limit: "memory", Reason: "memory max must be greater than 0"}
+	}
+	if l.HasMaxProcesses && l.MaxProcesses == 0 {
+		return &ResourceLimitError{Limit: "processes", Reason: "max processes must be greater than 0"}
+	}
+	if l.HasCPUQuota && !(l.CPUQuota > 0 && !math.IsInf(l.CPUQuota, 0)) {
+		return &ResourceLimitError{Limit: "cpu", Reason: "cpu quota must be a finite value greater than 0"}
+	}
+	return nil
 }
 
 // Mechanism reports the containment mechanism the group is using.

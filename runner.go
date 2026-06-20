@@ -73,7 +73,7 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	job, err := sys.NewJob()
+	job, err := sys.NewJob(sys.Limits{}) // per-run containment carries no resource caps
 	if err != nil {
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}

@@ -101,6 +101,28 @@ func ExampleGroup_Stats() {
 	}
 }
 
+func ExampleNewGroup_limits() {
+	ctx := context.Background()
+
+	// Cap the whole tree's resources. A Windows Job Object enforces all three; a
+	// mechanism without a whole-tree limit primitive (every Unix backend today)
+	// returns a *ResourceLimitError rather than a silently-unbounded group.
+	group, err := processkit.NewGroup(
+		processkit.WithMemoryMax(512*1024*1024), // 512 MiB
+		processkit.WithMaxProcesses(64),
+		processkit.WithCPUQuota(1.5), // 1.5 cores' worth
+	)
+	if errors.Is(err, processkit.ErrResourceLimit) {
+		log.Printf("limits unenforceable here: %v", err)
+		return
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer group.Close()
+	_, _ = group.Start(ctx, processkit.Command("my-worker"))
+}
+
 func ExampleGroup_Signal() {
 	ctx := context.Background()
 	group, err := processkit.NewGroup()

@@ -33,6 +33,24 @@ type ProcMetrics struct {
 	HasMem     bool
 }
 
+// Limits are whole-tree resource caps applied to a Job at creation. Each cap is
+// optional (its Has flag); a zero Limits requests no caps. Enforcement needs a
+// real container (a Windows Job Object): a backend that can't honour a requested
+// cap fails Job creation rather than handing back an unbounded tree.
+type Limits struct {
+	MemoryMax       uint64  // whole-tree memory ceiling in bytes
+	HasMemoryMax    bool    //
+	MaxProcesses    uint32  // live-process ceiling for the tree
+	HasMaxProcesses bool    //
+	CPUQuota        float64 // CPU ceiling in cores' worth (0.5 = half a core)
+	HasCPUQuota     bool    //
+}
+
+// Any reports whether any cap is set (i.e. the Job needs a limit-capable backend).
+func (l Limits) Any() bool {
+	return l.HasMemoryMax || l.HasMaxProcesses || l.HasCPUQuota
+}
+
 // Mechanism reports which OS primitive a Job uses (mapped to the public
 // processkit.Mechanism by the caller, which can't import this internal package).
 type Mechanism int
@@ -94,8 +112,12 @@ type Job interface {
 	Stats() (Stats, error)
 }
 
-// NewJob creates a fresh, empty job for the current platform.
-func NewJob() (Job, error) { return newJob() }
+// NewJob creates a fresh, empty job for the current platform, applying limits to
+// its container at creation. If limits.Any() and the platform has no limit-capable
+// container (every Unix here, until a cgroup backend lands), NewJob fails rather
+// than returning a job that silently ignores the caps; the caller maps that to
+// ErrResourceLimit.
+func NewJob(limits Limits) (Job, error) { return newJob(limits) }
 
 // ProcessMetrics reads one process's resource usage by pid. It never errors: a
 // metric it can't read (process gone, permission, unsupported platform) is simply

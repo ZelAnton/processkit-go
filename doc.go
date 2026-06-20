@@ -55,6 +55,13 @@
 // one run over its lifetime into a [RunProfile]. Metrics a platform can't read are
 // reported as unavailable (an ok bool), never an error.
 //
+// A group can also cap the whole tree's resources at creation: [NewGroup] takes
+// [WithMemoryMax], [WithMaxProcesses], and [WithCPUQuota]. A Windows Job Object
+// enforces all three; a mechanism with no whole-tree limit primitive (every Unix
+// backend today — a Linux cgroup-v2 backend is planned) makes [NewGroup] fail with
+// a [*ResourceLimitError] (matching [ErrResourceLimit]) rather than hand back a
+// silently-unbounded group. An unenforced limit is no protection.
+//
 // A group-started process can be probed for readiness: [RunningProcess.WaitForLine]
 // waits for a line of its output to match, [RunningProcess.WaitForPort] waits for a
 // TCP address to accept connections, and [RunningProcess.WaitFor] polls a custom

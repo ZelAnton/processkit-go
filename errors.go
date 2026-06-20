@@ -181,6 +181,34 @@ func (e *NotReadyError) Is(target error) bool { return target == ErrNotReady }
 // Unwrap exposes the last underlying failure (if any) to errors.Is / errors.As.
 func (e *NotReadyError) Unwrap() error { return e.Cause }
 
+// ResourceLimitError reports that a whole-tree resource cap requested via
+// [NewGroup] — [WithMemoryMax], [WithMaxProcesses], or [WithCPUQuota] — could not
+// be enforced. Either the value was invalid, or the active mechanism has no
+// whole-tree limit primitive: a Windows Job Object enforces all three, but every
+// Unix backend here does not (a Linux cgroup-v2 backend is planned), so a limit
+// requested there fails fast. An unenforced limit is no protection, so this is
+// raised rather than handing back a silently-unbounded group. Matches
+// errors.Is(err, [ErrResourceLimit]).
+type ResourceLimitError struct {
+	Limit  string // which cap: "memory", "processes", "cpu", or "" for the whole request
+	Reason string // why it could not be enforced (always set)
+	Cause  error  // the underlying OS error, if any (nil for a rejected value)
+}
+
+// Error renders the limit failure.
+func (e *ResourceLimitError) Error() string {
+	if e.Limit != "" {
+		return fmt.Sprintf("processkit: could not enforce %s limit: %s", e.Limit, sanitize(e.Reason))
+	}
+	return fmt.Sprintf("processkit: could not enforce resource limits: %s", sanitize(e.Reason))
+}
+
+// Is matches the ErrResourceLimit sentinel.
+func (e *ResourceLimitError) Is(target error) bool { return target == ErrResourceLimit }
+
+// Unwrap exposes the underlying OS error (if any) to errors.Is / errors.As.
+func (e *ResourceLimitError) Unwrap() error { return e.Cause }
+
 // --- safe rendering helpers (shared by the error types) ---
 
 // previewLimit bounds how many bytes of a captured stream appear in an error

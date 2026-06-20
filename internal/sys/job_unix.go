@@ -24,7 +24,16 @@ type pgroupJob struct {
 	solo  []int      // individually-tracked adopted pids (no descendant capture)
 }
 
-func newJob() (Job, error) { return &pgroupJob{}, nil }
+func newJob(limits Limits) (Job, error) {
+	// A POSIX process group has no resource accounting, so a requested cap can't be
+	// honoured here — fail fast rather than hand back an unbounded tree the caller
+	// believes is capped. (A Linux cgroup-v2 backend that enforces these is a
+	// planned addition; until then every Unix takes this path.)
+	if limits.Any() {
+		return nil, errors.New("sys: resource limits require a cgroup or Job Object; unavailable on this target")
+	}
+	return &pgroupJob{}, nil
+}
 
 func (j *pgroupJob) Configure(cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil {

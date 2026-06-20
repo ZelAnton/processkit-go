@@ -107,7 +107,7 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 		return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
 	}
 
-	job, err := sys.NewJob()
+	job, err := sys.NewJob(sys.Limits{}) // a pipeline shares one container, no resource caps
 	if err != nil {
 		return nil, &StartError{Program: p.name(), Err: err}
 	}

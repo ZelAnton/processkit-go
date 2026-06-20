@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Stopped` `StopReason`, `StormPauses`); sequential single-flight (the tree is
     reaped before each restart); a cancelled context or a terminal spawn failure
     is an error.
+- Resource limits: `NewGroup` now takes `GroupOption`s — `WithMemoryMax(bytes)`,
+  `WithMaxProcesses(n)`, `WithCPUQuota(cores)` — that cap the whole tree at creation
+  (the call stays backward-compatible: `NewGroup()` with no options is unchanged).
+  A **Windows Job Object** enforces all three (whole-job memory limit, active-process
+  limit, CPU hard cap). A mechanism with no whole-tree limit primitive — every Unix
+  backend today — does not silently ignore a cap: `NewGroup` returns the new
+  `*ResourceLimitError` (matching the `ErrResourceLimit` sentinel, now produced),
+  as it does for an invalid value (zero / negative / non-finite). A Linux cgroup-v2
+  enforcement backend is planned; until then a limit requested on Linux fails fast.
 - Resource metrics: `Group.Stats() (GroupStats, error)` (a whole-tree snapshot —
   `ActiveProcesses` always, plus `CPUTime` / `PeakMemoryBytes` on the Job Object
   backend), `Group.SampleStats(ctx, every)` (a channel of snapshots),

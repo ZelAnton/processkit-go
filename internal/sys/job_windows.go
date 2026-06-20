@@ -5,7 +5,9 @@ package sys
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +20,40 @@ import (
 // locally so we don't depend on whether x/sys/windows exports the class constant.
 const jobObjectExtendedLimitInformation = 9
 
+// jobCPURateControlInfo mirrors JOBOBJECT_CPU_RATE_CONTROL_INFORMATION. x/sys/
+// windows@v0.46.0 exports the info-class constant (JobObjectCpuRateControlInformation)
+// but not this struct or its control flags, so define them here. The C struct is
+// { DWORD ControlFlags; union { DWORD CpuRate; DWORD Weight; ... } } — 8 bytes; we
+// use the CpuRate arm of the union.
+type jobCPURateControlInfo struct {
+	ControlFlags uint32
+	CPURate      uint32
+}
+
+const (
+	jobObjectCPURateControlEnable  = 0x1 // JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+	jobObjectCPURateControlHardCap = 0x4 // JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+)
+
+// cpuHardCapRate converts a per-core CPU quota into a Job Object hard-cap CpuRate:
+// 1/100 of a percent of *total* system CPU, in 1..=10000. cores is a fraction of
+// one core (0.5 = half a core); cpus is the host processor count. A quota at or
+// above the core count saturates at 100% (10000); the result floors at 1 because
+// the API rejects a zero rate.
+func cpuHardCapRate(cores, cpus float64) uint32 {
+	if cpus <= 0 {
+		cpus = 1
+	}
+	rate := math.Round((cores / cpus) * 10000)
+	if rate < 1 {
+		rate = 1
+	}
+	if rate > 10000 {
+		rate = 10000
+	}
+	return uint32(rate)
+}
+
 // winJob contains a set of trees in one Windows Job Object with
 // KILL_ON_JOB_CLOSE. Each child is created suspended (Configure), assigned to the
 // job, then resumed (Assign) — closing the race where a fast child forks a
@@ -29,19 +65,51 @@ type winJob struct {
 	handle windows.Handle
 }
 
-func newJob() (Job, error) {
+func newJob(limits Limits) (Job, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("CreateJobObject: %w", err)
 	}
+	// KILL_ON_JOB_CLOSE is the no-orphan guarantee; the memory and process-count
+	// caps ride along on the same extended-limit struct. Each bounds the whole job.
 	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if limits.HasMemoryMax {
+		info.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_JOB_MEMORY
+		// JobMemoryLimit is SIZE_T (uintptr); saturate rather than wrap on a 32-bit host.
+		mem := uintptr(limits.MemoryMax)
+		if uint64(mem) != limits.MemoryMax {
+			mem = ^uintptr(0)
+		}
+		info.JobMemoryLimit = mem
+	}
+	if limits.HasMaxProcesses {
+		info.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+		info.BasicLimitInformation.ActiveProcessLimit = limits.MaxProcesses
+	}
 	if _, err := windows.SetInformationJobObject(
 		job, jobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)),
 	); err != nil {
 		_ = windows.CloseHandle(job)
-		return nil, fmt.Errorf("SetInformationJobObject: %w", err)
+		return nil, fmt.Errorf("SetInformationJobObject(extended-limit): %w", err)
+	}
+
+	// CPU quota is a separate info class. The hard cap is expressed in 1/100 of a
+	// percent of *total* system CPU (1..=10000), so convert the per-core fraction
+	// using the host processor count.
+	if limits.HasCPUQuota {
+		cpu := jobCPURateControlInfo{
+			ControlFlags: jobObjectCPURateControlEnable | jobObjectCPURateControlHardCap,
+			CPURate:      cpuHardCapRate(limits.CPUQuota, float64(runtime.NumCPU())),
+		}
+		if _, err := windows.SetInformationJobObject(
+			job, windows.JobObjectCpuRateControlInformation,
+			uintptr(unsafe.Pointer(&cpu)), uint32(unsafe.Sizeof(cpu)),
+		); err != nil {
+			_ = windows.CloseHandle(job)
+			return nil, fmt.Errorf("SetInformationJobObject(cpu-rate): %w", err)
+		}
 	}
 	return &winJob{handle: job}, nil
 }
