@@ -12,10 +12,6 @@ import (
 	"github.com/ZelAnton/processkit-go/internal/sys"
 )
 
-// sigTERM is the signal number for SIGTERM — the graceful-shutdown signal. It is
-// only delivered on Unix (Windows has no signal tier; shutdown is an atomic kill).
-const sigTERM = 15
-
 // defaultShutdownGrace is how long [Group.Shutdown] waits for members to exit
 // before hard-killing survivors, when no grace is given.
 const defaultShutdownGrace = 5 * time.Second
@@ -256,7 +252,7 @@ func (g *Group) Shutdown(ctx context.Context, opts ...ShutdownOption) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	if err := g.job.Signal(sigTERM); err != nil {
+	if err := g.job.Signal(SignalTerm.number()); err != nil {
 		// Unsupported (Windows) or a delivery failure — fall back to a hard kill.
 		return g.Close()
 	}

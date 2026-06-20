@@ -22,7 +22,8 @@ var (
 	ErrTimeout = errors.New("processkit: run timed out")
 
 	// ErrUnsupported means the operation is not available on this platform (e.g.
-	// arbitrary signals on Windows, uid/gid drop off Unix). Never a silent skip.
+	// a non-kill [Group.Signal], or [Group.Suspend] / [Group.Resume], on Windows).
+	// Never a silent skip.
 	ErrUnsupported = errors.New("processkit: operation not supported on this platform")
 
 	// ErrNotReady means a readiness probe did not pass within its deadline (or can
