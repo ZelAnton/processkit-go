@@ -35,6 +35,10 @@ var (
 	// ErrNotFound means the program could not be found. A [*NotFoundError] matches
 	// this via errors.Is.
 	ErrNotFound = errors.New("processkit: program not found")
+
+	// ErrTooFewStages means a [Pipeline] was run with fewer than two stages. A
+	// pipeline needs at least two commands to chain.
+	ErrTooFewStages = errors.New("processkit: a pipeline needs at least two stages")
 )
 
 // ExitError reports a run that completed but was not a success — a non-zero exit

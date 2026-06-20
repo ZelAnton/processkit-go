@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Cmd.WithTimeout` is honoured and attributed to that stage.
   - `Cmd.WithUncheckedInPipe` exempts a stage from attribution (the
     `producer | head` pattern).
+  - `ErrTooFewStages` sentinel for a pipeline run with fewer than two stages.
+    On a pipeline `Result`, `Program` / `Args` reflect the attributed stage.
 
 ### Changed
 -

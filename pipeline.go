@@ -34,9 +34,10 @@ type Pipeline struct {
 
 // Pipe builds a pipeline from two or more stages, wiring each stage's stdout to
 // the next stage's stdin. A pipeline needs at least two stages; the verbs return
-// an error for fewer. The stages' own [Cmd.WithTimeout] (per-stage deadline),
-// [Cmd.WithOkCodes], and [Cmd.WithUncheckedInPipe] are honoured; their
-// [Cmd.WithRunner] is not (a pipeline always runs real processes).
+// [ErrTooFewStages] for fewer. Each stage's program, arguments, [Cmd.WithDir],
+// [Cmd.WithEnv], [Cmd.WithTimeout] (per-stage deadline), [Cmd.WithOkCodes], and
+// [Cmd.WithUncheckedInPipe] are honoured; its [Cmd.WithRunner] is not (a pipeline
+// always runs real processes, so a stage carrying a fake runner is ignored).
 func Pipe(stages ...*Cmd) *Pipeline {
 	return &Pipeline{stages: append([]*Cmd(nil), stages...)}
 }
@@ -81,10 +82,16 @@ func (p *Pipeline) name() string {
 // attribution: stdout is the last stage's, while the program / stderr / exit
 // outcome are the first failing (non-exempt) stage's — see the package overview.
 // A non-zero exit anywhere is data in the Result, not an error; only a spawn
-// failure, a cancelled context, or the caller's context deadline errors.
+// failure, a cancelled context, the caller's context deadline, or fewer than two
+// stages ([ErrTooFewStages]) errors.
+//
+// Because a chain has no single program, [Result.Program] and [Result.Args] on a
+// pipeline Result reflect the *attributed* stage (the blamed one, or the last on
+// success) — except a whole-chain timeout, whose Program is the joined "a | b | c"
+// chain name. Stdout is always the last stage's.
 func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 	if len(p.stages) < 2 {
-		return nil, errors.New("processkit: a pipeline needs at least two stages")
+		return nil, ErrTooFewStages
 	}
 
 	parent := ctx
@@ -123,6 +130,11 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 		}
 		for _, c := range started {
 			_ = c.Wait()
+		}
+		// The caller's context ending the run wins: a Start/Assign that failed
+		// because the caller cancelled is a cancellation, not a spawn failure.
+		if parent.Err() != nil {
+			return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
 		}
 		return nil, err
 	}
@@ -201,7 +213,10 @@ func (p *Pipeline) Output(ctx context.Context) (*Result, error) {
 	if parent.Err() != nil {
 		return nil, &CancelError{Program: p.name(), Cause: parent.Err()}
 	}
-	// The pipeline's own deadline: a whole-chain timeout with no partial stdout.
+	// The pipeline's own deadline: a whole-chain timeout. The Result is deliberately
+	// skeletal — no partial stdout (the chain was abandoned), no stderr or ok-codes,
+	// and the joined chain name as the program. A timeout is never a success anyway
+	// (timedOut has no Code), so the empty ok-codes change nothing.
 	if p.timeout > 0 && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return &Result{
 			program:   p.name(),

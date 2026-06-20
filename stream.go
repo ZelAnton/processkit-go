@@ -78,7 +78,8 @@ type startConfig struct {
 
 // WithStdin feeds the process's standard input from r. For interactive input,
 // pass the read end of an [io.Pipe] and write to its write end over time; close
-// the write end to signal EOF.
+// the write end to signal EOF. This is a [Group.Start] option; to feed the head
+// of a chain, use the [Pipeline.WithStdin] method instead.
 //
 // You must eventually close (or exhaust) r once the process no longer needs input.
 // If r is not an *os.File, a background goroutine copies it to the process, and a

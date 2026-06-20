@@ -25,7 +25,10 @@ type Cmd struct {
 	timeout time.Duration
 	runner  ProcessRunner
 
-	uncheckedInPipe bool // exempt from a Pipeline's pipefail attribution
+	// uncheckedInPipe exempts this command from a Pipeline's pipefail attribution.
+	// Deliberately NOT carried in invocation(), so it is inert outside a Pipeline
+	// (Cmd.Output and Group.Start never see it).
+	uncheckedInPipe bool
 }
 
 // Command starts building a command that runs program with args. Finish with a

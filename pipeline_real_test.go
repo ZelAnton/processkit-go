@@ -182,8 +182,8 @@ func TestPipeline_FirstStageNotFound(t *testing.T) {
 
 func TestPipeline_TooFewStages(t *testing.T) {
 	_, err := Pipe(Command("only-one")).Output(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "at least two stages") {
-		t.Fatalf("err = %v, want an at-least-two-stages error", err)
+	if !errors.Is(err, ErrTooFewStages) {
+		t.Fatalf("err = %v, want ErrTooFewStages", err)
 	}
 }
 

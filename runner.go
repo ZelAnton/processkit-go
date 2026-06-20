@@ -87,6 +87,11 @@ func (JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) {
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
+		// A start that failed because the caller cancelled is a cancellation, not a
+		// spawn failure (mirrors the Assign-failure path below and Pipeline.Output).
+		if parent.Err() != nil {
+			return nil, &CancelError{Program: inv.Program, Cause: parent.Err()}
+		}
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, &NotFoundError{Program: inv.Program, Searched: searchedPath(inv.Program)}
 		}
