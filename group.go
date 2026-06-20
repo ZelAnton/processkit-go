@@ -67,10 +67,10 @@ func WithMemoryMax(bytes uint64) GroupOption {
 
 // WithMaxProcesses caps the number of live processes in the tree at n (> 0). On
 // Windows the Job Object's active-process limit refuses the process that would
-// exceed it: a [Group.Start] (or [Group.Adopt]) past the cap fails — the process is
-// rejected, never silently admitted — so the failure surfaces through that call,
-// not as a creation-time error. See [WithMemoryMax] for the unsupported-mechanism
-// behaviour.
+// exceed it, so a [Group.Start] (or [Group.Adopt]) past the cap fails — the process
+// is rejected, never silently admitted. On a Linux cgroup the cap is the cgroup's
+// pids.max: a fork that would push the tree past n fails (EAGAIN), so the tree can't
+// grow beyond the cap. See [WithMemoryMax] for the unsupported-mechanism behaviour.
 func WithMaxProcesses(n uint32) GroupOption {
 	return func(c *groupConfig) { c.limits.MaxProcesses, c.limits.HasMaxProcesses = n, true }
 }

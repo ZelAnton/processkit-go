@@ -20,10 +20,12 @@ const (
 	// Object: a child that calls setsid escapes it.
 	MechanismProcessGroup
 
-	// MechanismCgroupV2 is a Linux cgroup v2 subtree. Reserved for the planned
-	// cgroup backend (which would also enforce [WithMemoryMax] / [WithMaxProcesses]
-	// / [WithCPUQuota] on Linux); not yet produced — Linux uses
-	// MechanismProcessGroup today.
+	// MechanismCgroupV2 is a Linux cgroup v2 subtree: children are placed atomically
+	// at clone (clone3 CLONE_INTO_CGROUP, kernel ≥ 5.7) and the tree is torn down
+	// with cgroup.kill. It is preferred on Linux wherever a cgroup can be made, and
+	// additionally enforces [WithMemoryMax] / [WithMaxProcesses] / [WithCPUQuota]
+	// where the controllers are delegated (the real cgroup-v2 root). Linux degrades
+	// to MechanismProcessGroup where no cgroup is available.
 	MechanismCgroupV2
 )
 

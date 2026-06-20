@@ -79,9 +79,10 @@ func (r JobRunner) Output(ctx context.Context, inv Invocation) (*Result, error) 
 	}
 	defer job.Close()
 	if err := job.Configure(cmd); err != nil {
-		// TODO(cgroup): a future cgroup Configure failure (couldn't create/enable
-		// the cgroup) should surface as ErrResourceLimit, not StartError. Latent
-		// today — the Job Object and pgroup backends never fail here.
+		// A per-run job carries no limits, so the Linux cgroup backend already fell
+		// back to a process group at NewJob if the cgroup couldn't be made — Configure
+		// here only sets SysProcAttr fields and is a containment step, never a limit
+		// one (those are a Group facility, applied at NewGroup).
 		return nil, &StartError{Program: inv.Program, Err: err}
 	}
 

@@ -4,8 +4,8 @@ Kernel-backed, no-orphan child-process management for Go — a native implementa
 of the [processkit](https://github.com/ZelAnton/ProcessKit-rs) model.
 
 Every process you start — and everything *it* spawns — runs inside a kill-on-drop
-OS container (a Windows **Job Object**, or a POSIX **process group**), so no
-descendant ever outlives your run. Capture output, read exit codes, set timeouts,
+OS container (a Windows **Job Object**, a Linux **cgroup v2** subtree, or a POSIX
+**process group**), so no descendant ever outlives your run. Capture output, read exit codes, set timeouts,
 and cancel through `context.Context` — with typed, `errors.Is`/`errors.As`-friendly
 errors.
 

@@ -113,10 +113,11 @@ type Job interface {
 }
 
 // NewJob creates a fresh, empty job for the current platform, applying limits to
-// its container at creation. If limits.Any() and the platform has no limit-capable
-// container (every Unix here, until a cgroup backend lands), NewJob fails rather
-// than returning a job that silently ignores the caps; the caller maps that to
-// ErrResourceLimit.
+// its container at creation: a Windows Job Object, a Linux cgroup v2 subtree (where
+// one can be made), or a POSIX process group. If limits.Any() and the active
+// mechanism can't enforce them (macOS/BSD, the Linux process-group fallback, or a
+// Linux cgroup that isn't the real root), NewJob fails rather than returning a job
+// that silently ignores the caps; the caller maps that to ErrResourceLimit.
 func NewJob(limits Limits) (Job, error) { return newJob(limits) }
 
 // ProcessMetrics reads one process's resource usage by pid. It never errors: a

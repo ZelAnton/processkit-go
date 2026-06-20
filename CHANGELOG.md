@@ -106,11 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WithMaxProcesses(n)`, `WithCPUQuota(cores)` — that cap the whole tree at creation
   (the call stays backward-compatible: `NewGroup()` with no options is unchanged).
   A **Windows Job Object** enforces all three (whole-job memory limit, active-process
-  limit, CPU hard cap). A mechanism with no whole-tree limit primitive — every Unix
-  backend today — does not silently ignore a cap: `NewGroup` returns the new
-  `*ResourceLimitError` (matching the `ErrResourceLimit` sentinel, now produced),
-  as it does for an invalid value (zero / negative / non-finite). A Linux cgroup-v2
-  enforcement backend is planned; until then a limit requested on Linux fails fast.
+  limit, CPU hard cap), and a **Linux cgroup v2** subtree enforces them where the
+  controllers are delegated (see the cgroup bullet above). A mechanism with no
+  whole-tree limit primitive — macOS/BSD, the Linux process-group fallback, or a
+  Linux cgroup that isn't the real root — does not silently ignore a cap: `NewGroup`
+  returns the new `*ResourceLimitError` (matching the `ErrResourceLimit` sentinel,
+  now produced), as it does for an invalid value (zero / negative / non-finite).
 - Resource metrics: `Group.Stats() (GroupStats, error)` (a whole-tree snapshot —
   `ActiveProcesses` always, plus `CPUTime` / `PeakMemoryBytes` on the Job Object
   backend), `Group.SampleStats(ctx, every)` (a channel of snapshots),
